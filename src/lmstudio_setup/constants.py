@@ -6,6 +6,13 @@ DEFAULT_MODEL = "qwen3.5-9b-mlx@8bit"
 LIGHT_MODEL = "qwen3.5-9b-mlx@4bit"
 EXPERIMENTAL_27B_MODEL = "qwen3.6-27b-mlx"
 EXPERIMENTAL_35B_MODEL = "qwen/qwen3.6-35b-a3b"
+GEMMA_4_E4B_MODEL = "google/gemma-4-e4b"
+PHI_4_MINI_REASONING_MODEL = "microsoft/phi-4-mini-reasoning"
+QWEN3_4B_THINKING_MODEL = "qwen/qwen3-4b-thinking-2507"
+QWEN3_4B_MODEL = "qwen/qwen3-4b-2507"
+OLMO_3_7B_MODEL = "allenai/olmo-3-7b"
+PHI_4_REASONING_MODEL = "microsoft/phi-4-reasoning"
+MAGISTRAL_SMALL_MODEL = "mistralai/magistral-small-2509"
 
 MIN_CONTEXT_LENGTH = 131_072
 DEFAULT_MAX_MEMORY_GIB = 24.0
@@ -27,14 +34,32 @@ SUPPORTED_MODELS: tuple[ModelSpec, ...] = (
     ModelSpec(LIGHT_MODEL),
     ModelSpec(EXPERIMENTAL_27B_MODEL),
     ModelSpec(EXPERIMENTAL_35B_MODEL, max_memory_gib=32.0, reserve_memory_gib=4.0),
+    ModelSpec(GEMMA_4_E4B_MODEL),
+    ModelSpec(PHI_4_MINI_REASONING_MODEL),
+    ModelSpec(QWEN3_4B_THINKING_MODEL),
+    ModelSpec(QWEN3_4B_MODEL),
+    ModelSpec(OLMO_3_7B_MODEL),
+    ModelSpec(PHI_4_REASONING_MODEL),
+    ModelSpec(MAGISTRAL_SMALL_MODEL),
 )
 
-ALIASES: tuple[str, ...] = (
-    "codex-lm-studio",
-    "codex-lm-studio-qwen3.5-9b-mlx-4bit",
-    "codex-lm-studio-qwen3.6-27b-mlx-4bit",
-    "codex-lm-studio-qwen3.6-35b-a3b",
+MODEL_ALIASES: tuple[tuple[str, str], ...] = (
+    ("codex-lm-studio", DEFAULT_MODEL),
+    ("codex-lm-studio-qwen3.5-9b-mlx-8bit", DEFAULT_MODEL),
+    ("codex-lm-studio-qwen3.5-9b-mlx-4bit", LIGHT_MODEL),
+    ("codex-lm-studio-qwen3.6-27b-mlx-4bit", EXPERIMENTAL_27B_MODEL),
+    ("codex-lm-studio-qwen3.6-35b-a3b", EXPERIMENTAL_35B_MODEL),
+    ("codex-lm-studio-gemma-4-e4b", GEMMA_4_E4B_MODEL),
+    ("codex-lm-studio-phi-4-mini-reasoning", PHI_4_MINI_REASONING_MODEL),
+    ("codex-lm-studio-qwen3-4b-thinking-2507", QWEN3_4B_THINKING_MODEL),
+    ("codex-lm-studio-qwen3-4b-2507", QWEN3_4B_MODEL),
+    ("codex-lm-studio-olmo-3-7b", OLMO_3_7B_MODEL),
+    ("codex-lm-studio-phi-4-reasoning", PHI_4_REASONING_MODEL),
+    ("codex-lm-studio-magistral-small-2509", MAGISTRAL_SMALL_MODEL),
 )
+
+ALIASES: tuple[str, ...] = tuple(alias for alias, _ in MODEL_ALIASES)
+ALIAS_TO_MODEL: dict[str, str] = dict(MODEL_ALIASES)
 
 LEGACY_ALIASES: tuple[str, ...] = (
     "modelcodex",
@@ -44,7 +69,6 @@ LEGACY_ALIASES: tuple[str, ...] = (
     "modelcodex-4bit",
     "codex-lm-studio-qwen35-9b-8bit",
     "modelcodex-qwen35-9b-8bit",
-    "codex-lm-studio-qwen3.5-9b-mlx-8bit",
     "modelcodex-qwen3.5-9b-mlx-8bit",
     "codex-lm-studio-qwen35-9b-4bit",
     "modelcodex-qwen35-9b-4bit",
@@ -66,13 +90,13 @@ LEGACY_ALIASES: tuple[str, ...] = (
 )
 
 PLAYGROUND_MLX_MODELS: tuple[str, ...] = (
-    "google/gemma-4-e4b",
-    "microsoft/phi-4-mini-reasoning",
-    "qwen/qwen3-4b-thinking-2507",
-    "qwen/qwen3-4b-2507",
-    "allenai/olmo-3-7b",
-    "microsoft/phi-4-reasoning",
-    "mistralai/magistral-small-2509",
+    GEMMA_4_E4B_MODEL,
+    PHI_4_MINI_REASONING_MODEL,
+    QWEN3_4B_THINKING_MODEL,
+    QWEN3_4B_MODEL,
+    OLMO_3_7B_MODEL,
+    PHI_4_REASONING_MODEL,
+    MAGISTRAL_SMALL_MODEL,
 )
 
 
@@ -97,6 +121,8 @@ def model_spec(model: str) -> ModelSpec:
 
 def default_model_for_invocation(invocation_name: str) -> str:
     name = invocation_name.lower()
+    if model := ALIAS_TO_MODEL.get(name):
+        return model
     if "35b" in name and ("a3b" in name or "35b-a3b" in name):
         return EXPERIMENTAL_35B_MODEL
     if "27b" in name:

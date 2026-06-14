@@ -207,6 +207,370 @@
       "upgrade": null,
       "experimental_supported_tools": [],
       "use_responses_lite": false
+    },
+    {
+      "slug": "google/gemma-4-e4b",
+      "display_name": "Gemma 4 E4B MLX 4bit (LM Studio Codex)",
+      "description": "Playground local Codex model: Gemma 4 E4B MLX 4bit served by LM Studio. LM Studio estimates about 8.95 GiB at 128K context with parallel 4.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "low",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 4,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "microsoft/phi-4-mini-reasoning",
+      "display_name": "Phi 4 Mini Reasoning MLX 4bit (LM Studio Codex)",
+      "description": "Playground local Codex model: Phi 4 Mini Reasoning MLX 4bit served by LM Studio. Small reasoning model for quick comparison runs.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 5,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "qwen/qwen3-4b-thinking-2507",
+      "display_name": "Qwen3 4B Thinking 2507 MLX 4bit (LM Studio Codex)",
+      "description": "Playground local Codex model: Qwen3 4B Thinking 2507 MLX 4bit served by LM Studio. Tiny reasoning-oriented Qwen trial model.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 6,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "qwen/qwen3-4b-2507",
+      "display_name": "Qwen3 4B 2507 MLX 4bit (LM Studio Codex)",
+      "description": "Playground local Codex model: Qwen3 4B 2507 MLX 4bit served by LM Studio. Tiny general Qwen trial model.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "low",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 7,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "allenai/olmo-3-7b",
+      "display_name": "OLMo 3 7B MLX 4bit (LM Studio Codex)",
+      "description": "Playground local Codex model: OLMo 3 7B MLX 4bit served by LM Studio. Open model comparison target for local coding sessions.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "low",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 8,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "microsoft/phi-4-reasoning",
+      "display_name": "Phi 4 Reasoning MLX 4bit (LM Studio Codex)",
+      "description": "Playground local Codex model: Phi 4 Reasoning MLX 4bit served by LM Studio. Larger reasoning model for manual trials.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 9,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "mistralai/magistral-small-2509",
+      "display_name": "Magistral Small 2509 MLX 4bit (LM Studio Codex)",
+      "description": "Playground local Codex model: Magistral Small 2509 MLX 4bit served by LM Studio. Larger reasoning model for manual trials.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 10,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
     }
   ]
 }

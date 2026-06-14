@@ -45,6 +45,10 @@ def _positive_int(value: str, name: str) -> int:
     return parsed
 
 
+def _env_truthy(value: str | None) -> bool:
+    return value is not None and value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 class EnsureOptions(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -57,6 +61,7 @@ class EnsureOptions(BaseModel):
     bind_address: str = DEFAULT_BIND_ADDRESS
     estimate_only: bool = False
     strict: bool = False
+    override_guardrails: bool = False
     lms_bin: Path = Field(default_factory=lambda: Path.home() / ".lmstudio" / "bin" / "lms")
 
     @field_validator("model")
@@ -96,6 +101,17 @@ class MemoryEstimate:
     gpu_gib: float | None
 
 
+@dataclass(frozen=True)
+class LoadedModelEstimate:
+    identifier: str
+    model_key: str
+    display_name: str
+    total_gib: float
+    last_used_time: int
+    status: str
+    source: str
+
+
 def options_from_env(
     *,
     model: str | None = None,
@@ -105,6 +121,7 @@ def options_from_env(
     parallel: int | None = None,
     estimate_only: bool = False,
     strict: bool | None = None,
+    override_guardrails: bool | None = None,
 ) -> EnsureOptions:
     env = os.environ
     selected_model = model or env.get("CODEX_LM_STUDIO_MODEL", DEFAULT_MODEL)
@@ -139,6 +156,9 @@ def options_from_env(
         bind_address=env.get("LM_STUDIO_BIND_ADDRESS", DEFAULT_BIND_ADDRESS),
         estimate_only=estimate_only,
         strict=env.get("CODEX_LM_STUDIO_STRICT", "0") == "1" if strict is None else strict,
+        override_guardrails=_env_truthy(env.get("CODEX_LM_STUDIO_OVERRIDE_GUARDRAILS"))
+        if override_guardrails is None
+        else override_guardrails,
         lms_bin=Path(env.get("LMS_BIN", str(Path.home() / ".lmstudio" / "bin" / "lms"))),
     )
 
@@ -204,20 +224,35 @@ async def ensure_server(options: EnsureOptions) -> int:
     return start.returncode
 
 
-async def estimate_model(options: EnsureOptions) -> CommandResult:
+async def estimate_model_key(
+    options: EnsureOptions,
+    model_key: str,
+    *,
+    context_length: int,
+    parallel: int,
+) -> CommandResult:
     return await run_command(
         [
             str(options.lms_bin),
             "load",
-            options.model,
+            model_key,
             "--context-length",
-            str(options.context_length),
+            str(context_length),
             "--parallel",
-            str(options.parallel),
+            str(parallel),
             "--estimate-only",
             "--yes",
         ],
         env=with_default_path(),
+    )
+
+
+async def estimate_model(options: EnsureOptions) -> CommandResult:
+    return await estimate_model_key(
+        options,
+        options.model,
+        context_length=options.context_length,
+        parallel=options.parallel,
     )
 
 
@@ -244,22 +279,170 @@ def _print(text: str, *, stream: object = sys.stdout) -> None:
     print(text, file=stream, end="" if text.endswith("\n") else "\n")
 
 
+def _loaded_model_identifier(model: dict[str, object]) -> str | None:
+    identifier = model.get("identifier")
+    return identifier if isinstance(identifier, str) and identifier else None
+
+
+def _loaded_model_key(model: dict[str, object]) -> str | None:
+    for key in ("modelKey", "identifier", "indexedModelIdentifier"):
+        value = model.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _loaded_model_display_name(model: dict[str, object], fallback: str) -> str:
+    value = model.get("displayName")
+    return value if isinstance(value, str) and value else fallback
+
+
+def _loaded_model_positive_int(
+    model: dict[str, object],
+    key: str,
+    fallback: int,
+) -> int:
+    value = model.get(key)
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit() and int(value) > 0:
+        return int(value)
+    return fallback
+
+
+def _loaded_model_last_used_time(model: dict[str, object]) -> int:
+    return _loaded_model_positive_int(model, "lastUsedTime", 0)
+
+
+def _loaded_model_status(model: dict[str, object]) -> str:
+    value = model.get("status")
+    return value if isinstance(value, str) and value else "unknown"
+
+
+def _loaded_model_size_estimate_gib(model: dict[str, object]) -> float | None:
+    value = model.get("sizeBytes")
+    if not isinstance(value, int) or value <= 0:
+        return None
+    # LM Studio estimates for MLX models are usually above file size because context
+    # memory is not represented by sizeBytes.
+    return value / 1024 / 1024 / 1024 * 1.4
+
+
+def lmstudio_guardrails_predict_failure(output: str) -> bool:
+    return "will fail to load based on your resource guardrails" in output.lower()
+
+
+def _confirm_guardrail_override(
+    options: EnsureOptions,
+    estimate: MemoryEstimate,
+    reasons: list[str],
+) -> bool:
+    _print(estimate.output, stream=sys.stderr)
+    _print(
+        "WARNING: overriding LM Studio setup guardrails for this load attempt.",
+        stream=sys.stderr,
+    )
+    for reason in reasons:
+        _print(f"- {reason}", stream=sys.stderr)
+    _print(
+        "This may unload idle LM Studio models if needed for the budget. "
+        "Non-idle models will not be interrupted.",
+        stream=sys.stderr,
+    )
+    try:
+        response = input(f"Type YES to continue loading {options.model}, or NO to stop: ")
+    except EOFError:
+        response = ""
+    if response == "YES":
+        return True
+    _print("Stopped before unloading or loading models.", stream=sys.stderr)
+    return False
+
+
+async def estimate_loaded_models(
+    options: EnsureOptions,
+    loaded: list[dict[str, object]],
+) -> list[LoadedModelEstimate]:
+    estimates: list[LoadedModelEstimate] = []
+    for model in loaded:
+        identifier = _loaded_model_identifier(model)
+        model_key = _loaded_model_key(model)
+        if identifier is None or model_key is None or identifier == options.model:
+            continue
+
+        context_length = _loaded_model_positive_int(
+            model,
+            "contextLength",
+            options.context_length,
+        )
+        parallel = _loaded_model_positive_int(model, "parallel", options.parallel)
+        display_name = _loaded_model_display_name(model, identifier)
+        status = _loaded_model_status(model)
+        result = await estimate_model_key(
+            options,
+            model_key,
+            context_length=context_length,
+            parallel=parallel,
+        )
+        try:
+            estimate = parse_memory_estimate(result.combined_output)
+            estimates.append(
+                LoadedModelEstimate(
+                    identifier=identifier,
+                    model_key=model_key,
+                    display_name=display_name,
+                    total_gib=estimate.total_gib,
+                    last_used_time=_loaded_model_last_used_time(model),
+                    status=status,
+                    source="LM Studio estimate",
+                )
+            )
+            continue
+        except ValueError:
+            fallback_gib = _loaded_model_size_estimate_gib(model)
+
+        if fallback_gib is not None:
+            estimates.append(
+                LoadedModelEstimate(
+                    identifier=identifier,
+                    model_key=model_key,
+                    display_name=display_name,
+                    total_gib=fallback_gib,
+                    last_used_time=_loaded_model_last_used_time(model),
+                    status=status,
+                    source="sizeBytes heuristic",
+                )
+            )
+    return estimates
+
+
+def select_unloads_for_budget(
+    options: EnsureOptions,
+    target_estimate: MemoryEstimate,
+    loaded_estimates: list[LoadedModelEstimate],
+) -> tuple[list[LoadedModelEstimate], float, float]:
+    projected_gib = target_estimate.total_gib + sum(
+        estimate.total_gib for estimate in loaded_estimates
+    )
+    if projected_gib <= options.max_memory_gib:
+        return [], projected_gib, projected_gib
+
+    selected: list[LoadedModelEstimate] = []
+    remaining_gib = projected_gib
+    for estimate in sorted(
+        (estimate for estimate in loaded_estimates if estimate.status == "idle"),
+        key=lambda item: (-item.total_gib, item.last_used_time),
+    ):
+        selected.append(estimate)
+        remaining_gib -= estimate.total_gib
+        if remaining_gib <= options.max_memory_gib:
+            break
+    return selected, projected_gib, remaining_gib
+
+
 async def ensure_model(options: EnsureOptions) -> int:
     if not options.lms_bin.exists() or not os.access(options.lms_bin, os.X_OK):
         _print(f"lms CLI not found or not executable: {options.lms_bin}", stream=sys.stderr)
-        return 1
-
-    physical_gib = await physical_memory_gib()
-    if (
-        physical_gib is not None
-        and physical_gib < options.max_memory_gib + options.reserve_memory_gib
-    ):
-        _print(
-            f"This machine reports {physical_gib:.2f} GiB RAM, which is below the requested "
-            f"{options.max_memory_gib:g} GiB model budget plus "
-            f"{options.reserve_memory_gib:g} GiB reserve.",
-            stream=sys.stderr,
-        )
         return 1
 
     server_code = await ensure_server(options)
@@ -278,16 +461,6 @@ async def ensure_model(options: EnsureOptions) -> int:
         _print(estimate_output, stream=sys.stderr)
         _print(f"{exc} for {options.model}", stream=sys.stderr)
         return 1
-
-    if estimate.total_gib > options.max_memory_gib:
-        _print(estimate.output, stream=sys.stderr)
-        _print(
-            f"Refusing to load {options.model}: estimated total memory "
-            f"{estimate.total_gib:.2f} GiB exceeds "
-            f"CODEX_LM_STUDIO_MAX_MEMORY_GIB={options.max_memory_gib:g}.",
-            stream=sys.stderr,
-        )
-        return EX_TEMPFAIL
 
     if options.estimate_only:
         _print(estimate.output)
@@ -322,24 +495,94 @@ async def ensure_model(options: EnsureOptions) -> int:
             )
             return 0
 
-    if "will fail to load based on your resource guardrails" in estimate.output.lower():
+    loaded_estimates = await estimate_loaded_models(options, loaded)
+    unloads, projected_gib, remaining_gib = select_unloads_for_budget(
+        options,
+        estimate,
+        loaded_estimates,
+    )
+    non_idle_blockers = [
+        loaded for loaded in loaded_estimates if loaded.status != "idle" and loaded not in unloads
+    ]
+    if remaining_gib > options.max_memory_gib and non_idle_blockers:
         _print(estimate.output, stream=sys.stderr)
         _print(
-            f"Refusing to unload/reload models: LM Studio resource guardrails predict "
-            f"{options.model} will fail to load.",
+            f"Refusing to load {options.model}: projected total estimate "
+            f"{projected_gib:.2f} GiB exceeds budget {options.max_memory_gib:g} GiB, "
+            "and fitting it would require interrupting non-idle LM Studio model(s).",
             stream=sys.stderr,
         )
-        _print(
-            "Raise LM Studio's model-loading guardrails or reduce "
-            "CODEX_LM_STUDIO_CONTEXT_LENGTH before trying this alias.",
-            stream=sys.stderr,
-        )
+        for model in non_idle_blockers:
+            _print(
+                f"- keeping {model.identifier} ({model.status}, "
+                f"{model.total_gib:.2f} GiB, {model.source})",
+                stream=sys.stderr,
+            )
         return EX_TEMPFAIL
 
-    for model in loaded:
-        identifier = model.get("identifier")
-        if isinstance(identifier, str) and identifier != options.model:
-            await unload_model(options, identifier)
+    physical_gib = await physical_memory_gib()
+    guardrail_reasons: list[str] = []
+    if (
+        physical_gib is not None
+        and physical_gib < options.max_memory_gib + options.reserve_memory_gib
+    ):
+        guardrail_reasons.append(
+            f"this machine reports {physical_gib:.2f} GiB RAM, below the requested "
+            f"{options.max_memory_gib:g} GiB model budget plus "
+            f"{options.reserve_memory_gib:g} GiB reserve"
+        )
+    if estimate.total_gib > options.max_memory_gib:
+        guardrail_reasons.append(
+            f"estimated total memory {estimate.total_gib:.2f} GiB exceeds "
+            f"CODEX_LM_STUDIO_MAX_MEMORY_GIB={options.max_memory_gib:g}"
+        )
+    lmstudio_predicts_failure = lmstudio_guardrails_predict_failure(estimate.output)
+    if lmstudio_predicts_failure and not unloads:
+        guardrail_reasons.append(
+            f"LM Studio resource guardrails predict {options.model} will fail to load"
+        )
+
+    if guardrail_reasons:
+        if not options.override_guardrails:
+            _print(estimate.output, stream=sys.stderr)
+            for reason in guardrail_reasons:
+                _print(f"Refusing to unload/reload models: {reason}.", stream=sys.stderr)
+            _print(
+                "Retry with --lmstudio-override-guardrails if you want to manually "
+                "confirm this load attempt.",
+                stream=sys.stderr,
+            )
+            return EX_TEMPFAIL
+        if not _confirm_guardrail_override(options, estimate, guardrail_reasons):
+            return EX_TEMPFAIL
+
+    if lmstudio_predicts_failure and unloads:
+        _print(
+            "LM Studio's estimator predicted a resource-guardrail failure before "
+            "budget-aware unloads; attempting after freeing room.",
+            stream=sys.stderr,
+        )
+
+    if loaded_estimates and not unloads:
+        _print(
+            f"Keeping {len(loaded_estimates)} other loaded LM Studio model(s): projected "
+            f"total estimate {projected_gib:.2f} GiB is within budget "
+            f"{options.max_memory_gib:g} GiB.",
+            stream=sys.stderr,
+        )
+    elif unloads:
+        _print(
+            f"Unloading {len(unloads)} LM Studio model(s) to fit {options.model}: projected "
+            f"total estimate {projected_gib:.2f} GiB exceeds budget "
+            f"{options.max_memory_gib:g} GiB.",
+            stream=sys.stderr,
+        )
+        for model in unloads:
+            _print(
+                f"- {model.identifier} ({model.status}, {model.total_gib:.2f} GiB, {model.source})",
+                stream=sys.stderr,
+            )
+            await unload_model(options, model.identifier)
 
     await unload_model(options, options.model)
     load = await run_command(

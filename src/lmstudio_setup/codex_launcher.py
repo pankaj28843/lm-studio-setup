@@ -21,6 +21,8 @@ from lmstudio_setup.lmstudio import ensure_model, options_from_env
 from lmstudio_setup.paths import repo_root, with_default_path
 from lmstudio_setup.toml_edit import ensure_root_key
 
+OVERRIDE_GUARDRAILS_FLAG = "--lmstudio-override-guardrails"
+
 
 def toml_string(value: str) -> str:
     return json.dumps(value)
@@ -37,6 +39,17 @@ def model_arg_value(args: list[str]) -> str | None:
         if arg.startswith("--model="):
             return arg.split("=", 1)[1]
     return None
+
+
+def split_launcher_args(args: list[str]) -> tuple[list[str], bool]:
+    codex_args: list[str] = []
+    override_guardrails = False
+    for arg in args:
+        if arg == OVERRIDE_GUARDRAILS_FLAG:
+            override_guardrails = True
+        else:
+            codex_args.append(arg)
+    return codex_args, override_guardrails
 
 
 def validate_model_args(args: list[str]) -> None:
@@ -114,9 +127,10 @@ async def launch_codex(user_args: list[str]) -> int:
         print(f"Model catalog is missing: {catalog}", file=sys.stderr)
         return 1
 
+    codex_user_args, override_guardrails = split_launcher_args(user_args)
     try:
-        validate_model_args(user_args)
-        requested_model = model_arg_value(user_args)
+        validate_model_args(codex_user_args)
+        requested_model = model_arg_value(codex_user_args)
         lm_model = requested_model or env.get(
             "CODEX_LM_STUDIO_MODEL",
             default_model_for_invocation(invocation_name),
@@ -170,6 +184,7 @@ async def launch_codex(user_args: list[str]) -> int:
             reserve_memory_gib=reserve_memory_gib,
             parallel=parallel,
             strict=True,
+            override_guardrails=override_guardrails or None,
         )
     except (ValidationError, ValueError) as exc:
         print(exc, file=sys.stderr)
@@ -206,9 +221,9 @@ async def launch_codex(user_args: list[str]) -> int:
         f"model_catalog_json={toml_string(str(catalog))}",
         "--dangerously-bypass-approvals-and-sandbox",
     ]
-    if not has_model_arg(user_args):
+    if not has_model_arg(codex_user_args):
         codex_args.extend(["--model", lm_model])
-    codex_args.extend(user_args)
+    codex_args.extend(codex_user_args)
 
     env["CODEX_HOME"] = str(lm_home)
     try:
