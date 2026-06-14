@@ -6,6 +6,8 @@ PATH="$HOME/.lmstudio/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sb
 LMS_BIN="${LMS_BIN:-$HOME/.lmstudio/bin/lms}"
 DEFAULT_MODEL="qwen3.5-9b-mlx@8bit"
 LIGHT_MODEL="qwen3.5-9b-mlx@4bit"
+EXPERIMENTAL_27B_MODEL="qwen3.6-27b-mlx"
+EXPERIMENTAL_35B_MODEL="qwen/qwen3.6-35b-a3b"
 MODEL="${CODEX_LM_STUDIO_MODEL:-$DEFAULT_MODEL}"
 MIN_CONTEXT_LENGTH=131072
 CONTEXT_LENGTH="${CODEX_LM_STUDIO_CONTEXT_LENGTH:-$MIN_CONTEXT_LENGTH}"
@@ -30,12 +32,12 @@ case "${1:-}" in
 esac
 
 allowed_models_label() {
-  printf '%s, %s\n' "$DEFAULT_MODEL" "$LIGHT_MODEL"
+  printf '%s, %s, %s, %s\n' "$DEFAULT_MODEL" "$LIGHT_MODEL" "$EXPERIMENTAL_27B_MODEL" "$EXPERIMENTAL_35B_MODEL"
 }
 
 model_is_allowed() {
   case "$1" in
-    "$DEFAULT_MODEL"|"$LIGHT_MODEL")
+    "$DEFAULT_MODEL"|"$LIGHT_MODEL"|"$EXPERIMENTAL_27B_MODEL"|"$EXPERIMENTAL_35B_MODEL")
       return 0
       ;;
     *)
@@ -184,6 +186,13 @@ if (( ESTIMATE_ONLY == 1 )); then
   printf 'Parsed total estimate: %s GiB; parsed GPU estimate: %s GiB; budget: %s GiB; reserve: %s GiB.\n' \
     "$total_gib" "${gpu_gib:-unknown}" "$MAX_MEMORY_GIB" "$RESERVE_MEMORY_GIB"
   exit 0
+fi
+
+if grep -qi 'will fail to load based on your resource guardrails' "$estimate_file"; then
+  cat "$estimate_file" >&2
+  echo "Refusing to unload/reload models: LM Studio resource guardrails predict $MODEL will fail to load." >&2
+  echo "Raise LM Studio's model-loading guardrails or reduce CODEX_LM_STUDIO_CONTEXT_LENGTH before trying this alias." >&2
+  exit 75
 fi
 
 "$LMS_BIN" ps --json |

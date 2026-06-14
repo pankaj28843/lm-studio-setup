@@ -4,6 +4,8 @@
       "slug": "qwen3.5-9b-mlx@8bit",
       "display_name": "Qwen3.5 9B MLX 8bit (LM Studio Codex)",
       "description": "Default local Codex model: Qwen3.5 9B MLX 8bit served by LM Studio. On a MacBook Pro M3 Max with 36 GB unified memory, LM Studio estimates about 13.63 GiB at 128K context.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
       "default_reasoning_level": "low",
       "supported_reasoning_levels": [
         {
@@ -54,6 +56,8 @@
       "slug": "qwen3.5-9b-mlx@4bit",
       "display_name": "Qwen3.5 9B MLX 4bit (LM Studio Codex)",
       "description": "Low-stress local Codex model: Qwen3.5 9B MLX 4bit served by LM Studio. On a MacBook Pro M3 Max with 36 GB unified memory, LM Studio estimates about 7.79 GiB at 128K context.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
       "default_reasoning_level": "low",
       "supported_reasoning_levels": [
         {
@@ -73,6 +77,110 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 1,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "qwen3.6-27b-mlx",
+      "display_name": "Qwen3.6 27B MLX 4bit (LM Studio Codex)",
+      "description": "Experimental local Codex model: Qwen3.6 27B MLX 4bit served by LM Studio. Larger reasoning/coding model for occasional use on a 36 GB Mac.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 2,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 100,
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text_and_image",
+      "supports_search_tool": false,
+      "supports_image_detail_original": true,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "experimental_supported_tools": [],
+      "use_responses_lite": false
+    },
+    {
+      "slug": "qwen/qwen3.6-35b-a3b",
+      "display_name": "Qwen3.6 35B A3B MLX 4bit (LM Studio Codex)",
+      "description": "Experimental local Codex model: Qwen3.6 35B A3B MLX 4bit served by LM Studio. Heavy reasoning/coding model for manual trials when LM Studio resource guardrails allow it.",
+      "base_instructions": "You are Codex, a coding agent running against a local LM Studio model. Follow the active system and developer instructions, use tools carefully, prefer concise engineering answers, and ask for clarification only when necessary.",
+      "model_messages": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth"
+        },
+        {
+          "effort": "high",
+          "description": "More reasoning for difficult tasks"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 3,
       "context_window": 131072,
       "max_context_window": 131072,
       "effective_context_window_percent": 100,

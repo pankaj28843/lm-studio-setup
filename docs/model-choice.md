@@ -2,7 +2,7 @@
 
 ## Verdict
 
-Use `qwen3.5-9b-mlx@8bit` as the default Codex model for a MacBook Pro M3 Max with 36 GB unified memory. Load it through LM Studio with `--parallel 4` so multiple Codex sessions can issue requests concurrently. Keep `qwen3.5-9b-mlx@4bit` as the low-stress fallback. Do not expose 27B or 35B models as normal aliases in this setup.
+Use `qwen3.5-9b-mlx@8bit` as the default Codex model for a MacBook Pro M3 Max with 36 GB unified memory. Load it through LM Studio with `--parallel 4` so multiple Codex sessions can issue requests concurrently. Keep `qwen3.5-9b-mlx@4bit` as the low-stress fallback. Expose `qwen3.6-27b-mlx` and `qwen/qwen3.6-35b-a3b` as experimental MLX aliases for manual trials.
 
 ## Local Estimates
 
@@ -12,8 +12,8 @@ Measured with LM Studio's CLI estimator at 128K context and `--parallel 4`:
 |---|---:|---|
 | `qwen3.5-9b-mlx@4bit` | 7.79 GiB | Safe fallback |
 | `qwen3.5-9b-mlx@8bit` | 13.63 GiB | Default |
-| `qwen3.6-27b-mlx` | 20.97 GiB | Too close to daily-use budget; LM Studio guardrails said it would fail |
-| `qwen/qwen3.6-35b-a3b` | 26.64 GiB | Over 24 GiB budget |
+| `qwen3.6-27b-mlx` | 20.97 GiB | Experimental; LM Studio guardrails currently predict load failure |
+| `qwen/qwen3.6-35b-a3b` | 26.64 GiB | Experimental; above 24 GiB budget and guardrails currently predict load failure |
 
 The budget used by this repo is `24` GiB for the model, leaving roughly `12` GiB for macOS, browsers, editors, terminals, and normal work on a 36 GB machine.
 
@@ -24,6 +24,10 @@ Do not add a Codex-side session lock. LM Studio 0.4.0 introduced parallel reques
 The important Apple Silicon detail is MLX support: LM Studio 0.4.2 added continuous batching in `mlx-engine 1.0.0`, currently for text requests. That means this Qwen MLX setup can rely on LM Studio to handle reasonable parallel Codex traffic.
 
 The tradeoff is throughput versus per-request latency. LM Studio's local `lms load --help` says each individual prediction may slow down with concurrency, but requests start faster and total throughput can improve. For this repo, the default is therefore `CODEX_LM_STUDIO_PARALLEL=4`, not a shell lock around Codex.
+
+## Validation
+
+Use `make validate` as the main gate. It checks shell syntax, validates the repo-local Codex model catalog with `codex debug models`, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates for all configured models. The heavy-model estimates are allowed to print LM Studio guardrail warnings; actual non-estimate loads stop before unloading the current working model if those guardrails predict failure.
 
 ## Evidence
 
@@ -57,4 +61,4 @@ Qwen's model card for Qwen3.5 9B lists 9B parameters, native 262,144-token conte
 
 ## Notes
 
-The 8-bit model has been preferred in real Codex use because it leaves a comfortable memory margin while preserving more quality than the 4-bit variant. The 4-bit launcher is still useful when the machine is busy.
+The 8-bit model has been preferred in real Codex use because it leaves a comfortable memory margin while preserving more quality than the 4-bit variant. The 4-bit launcher is still useful when the machine is busy. The 27B and 35B aliases are intentionally treated as experiments, not daily defaults.

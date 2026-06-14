@@ -6,19 +6,23 @@ The default target is `qwen3.5-9b-mlx@8bit` with LM Studio loaded for 4 parallel
 
 ## Supported LLMs
 
-This setup supports exactly two LM Studio model IDs:
+This setup supports four local MLX model IDs:
 
 - `qwen3.5-9b-mlx@8bit`: default, preferred Codex model.
 - `qwen3.5-9b-mlx@4bit`: lower-memory fallback.
+- `qwen3.6-27b-mlx`: experimental 27B reasoning/coding model.
+- `qwen/qwen3.6-35b-a3b`: experimental 35B A3B reasoning/coding model.
 
-27B and 35B models are intentionally unsupported here.
+The 27B and 35B aliases are for manual trials. On this 36 GB machine, LM Studio currently estimates that both will fail its own resource guardrails at 128K context, so the helper refuses to unload the working 9B model before attempting those loads.
 
 ## What This Installs
 
-`make install` writes the default launcher plus one fallback model launcher into `~/.local/bin` by default:
+`make install` writes these launchers into `~/.local/bin` by default:
 
 - `codex-lm-studio`
 - `codex-lm-studio-qwen3.5-9b-mlx-4bit`
+- `codex-lm-studio-qwen3.6-27b-mlx-4bit`
+- `codex-lm-studio-qwen3.6-35b-a3b`
 
 The launcher keeps Codex state isolated in `~/.codex-lm-studio` while symlinking non-auth state from `~/.codex`. It also points Codex at the repo-local model catalog in `config/lmstudio-qwen.json`.
 
@@ -27,7 +31,7 @@ The launcher keeps Codex state isolated in `~/.codex-lm-studio` while symlinking
 - macOS on Apple Silicon.
 - LM Studio 0.4.2 or newer, installed and signed in/configured enough for `lms` to list and load local models.
 - `qwen3.5-9b-mlx@8bit` downloaded in LM Studio.
-- Optional but recommended: `qwen3.5-9b-mlx@4bit`.
+- Optional but recommended: `qwen3.5-9b-mlx@4bit`, `qwen3.6-27b-mlx`, and `qwen/qwen3.6-35b-a3b`.
 - `codex`, `lms`, and `jq` on `PATH`.
 
 The scripts prepend `~/.lmstudio/bin`, Homebrew paths, and system paths, so the default LM Studio CLI location works without extra shell setup.
@@ -64,6 +68,13 @@ Use the lighter 4-bit model:
 codex-lm-studio-qwen3.5-9b-mlx-4bit
 ```
 
+Try the larger experimental MLX models:
+
+```bash
+codex-lm-studio-qwen3.6-27b-mlx-4bit
+codex-lm-studio-qwen3.6-35b-a3b
+```
+
 Override context, memory budget, or LM Studio parallelism:
 
 ```bash
@@ -89,13 +100,24 @@ There is no Codex-side session lock. LM Studio owns request concurrency: the hel
 ## Checks
 
 ```bash
+make validate
 make check
 make estimates
 make links
 ```
 
-`make estimates` is safe: it only calls the LM Studio estimator and does not load or unload models.
+`make validate` is the main gate. It runs shell/catalog checks, verifies the Codex model catalog parses, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates. `make estimates` is safe: it only calls the LM Studio estimator and does not load or unload models.
+
+## Playground Downloads
+
+Extra MLX-only model downloads are kept out of validation. To try the curated small-to-medium sampler:
+
+```bash
+make download-playground-mlx
+```
+
+Override `PLAYGROUND_MLX_MODELS` to try a different list. The target uses `lms get --mlx --yes` and skips entries LM Studio cannot resolve as MLX artifacts.
 
 ## Research Summary
 
-The model choice is documented in `docs/model-choice.md`. The short version: official LM Studio docs recommend `lms load --estimate-only` for memory planning, LM Studio supports parallel requests with continuous batching, MLX support for that batching arrived in LM Studio 0.4.2, and Qwen3.5 9B provides a native 262K context window with tool-use support. Local estimates keep 9B 8-bit and 4-bit comfortably below the 24 GiB budget, while 27B and 35B are too close or over budget for this 36 GB machine.
+The model choice is documented in `docs/model-choice.md`. The short version: official LM Studio docs recommend `lms load --estimate-only` for memory planning, LM Studio supports parallel requests with continuous batching, MLX support for that batching arrived in LM Studio 0.4.2, and the Qwen MLX models provide native 262K context windows with tool-use support. Local estimates keep 9B 8-bit and 4-bit comfortably below the 24 GiB budget, while 27B and 35B are experimental on this 36 GB machine.

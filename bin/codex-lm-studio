@@ -31,6 +31,8 @@ INVOCATION_NAME="${CODEX_LM_STUDIO_INVOCATION_NAME:-$(basename "${0:-codex-lm-st
 
 readonly DEFAULT_MODEL="qwen3.5-9b-mlx@8bit"
 readonly LIGHT_MODEL="qwen3.5-9b-mlx@4bit"
+readonly EXPERIMENTAL_27B_MODEL="qwen3.6-27b-mlx"
+readonly EXPERIMENTAL_35B_MODEL="qwen/qwen3.6-35b-a3b"
 readonly MIN_CONTEXT_LENGTH=131072
 readonly DEFAULT_MAX_MEMORY_GIB=24
 readonly DEFAULT_RESERVE_MEMORY_GIB=12
@@ -38,7 +40,7 @@ readonly DEFAULT_PARALLEL=4
 readonly CATALOG_PATH="$REPO_ROOT/config/lmstudio-qwen.json"
 
 allowed_models() {
-  printf '%s\n' "$DEFAULT_MODEL" "$LIGHT_MODEL"
+  printf '%s\n' "$DEFAULT_MODEL" "$LIGHT_MODEL" "$EXPERIMENTAL_27B_MODEL" "$EXPERIMENTAL_35B_MODEL"
 }
 
 model_is_allowed() {
@@ -58,6 +60,12 @@ allowed_models_label() {
 
 default_model_for_invocation() {
   case "$1" in
+    *35b*a3b*|*35b-a3b*)
+      printf '%s\n' "$EXPERIMENTAL_35B_MODEL"
+      ;;
+    *27b*)
+      printf '%s\n' "$EXPERIMENTAL_27B_MODEL"
+      ;;
     *4bit*)
       printf '%s\n' "$LIGHT_MODEL"
       ;;
@@ -77,6 +85,28 @@ parallel_for_invocation() {
   fi
 
   printf '%s\n' "$DEFAULT_PARALLEL"
+}
+
+default_max_memory_for_model() {
+  case "$1" in
+    "$EXPERIMENTAL_35B_MODEL")
+      printf '32\n'
+      ;;
+    *)
+      printf '%s\n' "$DEFAULT_MAX_MEMORY_GIB"
+      ;;
+  esac
+}
+
+default_reserve_memory_for_model() {
+  case "$1" in
+    "$EXPERIMENTAL_35B_MODEL")
+      printf '4\n'
+      ;;
+    *)
+      printf '%s\n' "$DEFAULT_RESERVE_MEMORY_GIB"
+      ;;
+  esac
 }
 
 toml_string() {
@@ -258,7 +288,7 @@ prepare_codex_home() {
 
 main() {
   CODEX_LM_STUDIO_ORIGINAL_ARGS=("$@")
-  local -a allowed=("$DEFAULT_MODEL" "$LIGHT_MODEL")
+  local -a allowed=("$DEFAULT_MODEL" "$LIGHT_MODEL" "$EXPERIMENTAL_27B_MODEL" "$EXPERIMENTAL_35B_MODEL")
 
   if ! command -v jq >/dev/null 2>&1; then
     echo "jq is required by codex-lm-studio" >&2
@@ -276,13 +306,11 @@ main() {
   local requested_model
   local lm_context_length
   local lm_compact_limit
-  local max_memory_gib="${CODEX_LM_STUDIO_MAX_MEMORY_GIB:-$DEFAULT_MAX_MEMORY_GIB}"
-  local reserve_memory_gib="${CODEX_LM_STUDIO_RESERVE_MEMORY_GIB:-$DEFAULT_RESERVE_MEMORY_GIB}"
+  local max_memory_gib="${CODEX_LM_STUDIO_MAX_MEMORY_GIB:-}"
+  local reserve_memory_gib="${CODEX_LM_STUDIO_RESERVE_MEMORY_GIB:-}"
   local parallel
   parallel="$(parallel_for_invocation "$INVOCATION_NAME")"
 
-  positive_number "$max_memory_gib" "CODEX_LM_STUDIO_MAX_MEMORY_GIB"
-  positive_number "$reserve_memory_gib" "CODEX_LM_STUDIO_RESERVE_MEMORY_GIB"
   if [[ ! "$parallel" =~ ^[0-9]+$ || "$parallel" == "0" ]]; then
     echo "CODEX_LM_STUDIO_PARALLEL must be a positive integer, got: $parallel" >&2
     exit 2
@@ -298,6 +326,11 @@ main() {
     echo "codex-lm-studio only allows CODEX_LM_STUDIO_MODEL in: $(allowed_models_label "${allowed[@]}"); got: $lm_model" >&2
     exit 2
   fi
+
+  max_memory_gib="${max_memory_gib:-$(default_max_memory_for_model "$lm_model")}"
+  reserve_memory_gib="${reserve_memory_gib:-$(default_reserve_memory_for_model "$lm_model")}"
+  positive_number "$max_memory_gib" "CODEX_LM_STUDIO_MAX_MEMORY_GIB"
+  positive_number "$reserve_memory_gib" "CODEX_LM_STUDIO_RESERVE_MEMORY_GIB"
 
   lm_context_length="$(context_at_least_min "${CODEX_LM_STUDIO_CONTEXT_LENGTH:-$MIN_CONTEXT_LENGTH}" "$MIN_CONTEXT_LENGTH" "CODEX_LM_STUDIO_CONTEXT_LENGTH")"
   lm_compact_limit="${CODEX_LM_STUDIO_AUTO_COMPACT_TOKEN_LIMIT:-$(((lm_context_length * 80 + 99) / 100))}"
