@@ -1,0 +1,447 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PATH="$HOME/.lmstudio/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
+resolve_self() {
+  local source="$1"
+  if [[ "$source" != */* ]]; then
+    source="$(command -v "$source")"
+  fi
+
+  while [[ -L "$source" ]]; do
+    local dir target
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    target="$(readlink "$source")"
+    if [[ "$target" == /* ]]; then
+      source="$target"
+    else
+      source="$dir/$target"
+    fi
+  done
+
+  local final_dir
+  final_dir="$(cd -P "$(dirname "$source")" && pwd)"
+  printf '%s/%s\n' "$final_dir" "$(basename "$source")"
+}
+
+SELF_PATH="$(resolve_self "${BASH_SOURCE[0]}")"
+REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/.." && pwd -P)"
+INVOCATION_NAME="${CODEX_LM_STUDIO_INVOCATION_NAME:-$(basename "${0:-codex-lm-studio}")}"
+
+readonly DEFAULT_MODEL="qwen3.5-9b-mlx@8bit"
+readonly LIGHT_MODEL="qwen3.5-9b-mlx@4bit"
+readonly MIN_CONTEXT_LENGTH=131072
+readonly DEFAULT_MAX_MEMORY_GIB=24
+readonly DEFAULT_RESERVE_MEMORY_GIB=12
+readonly DEFAULT_PARALLEL=1
+readonly DEFAULT_MULTI_SESSION_PARALLEL=2
+readonly CATALOG_PATH="$REPO_ROOT/config/lmstudio-qwen.json"
+
+allowed_models() {
+  printf '%s\n' "$DEFAULT_MODEL" "$LIGHT_MODEL"
+}
+
+allowed_models_label() {
+  local IFS=", "
+  printf '%s\n' "$*"
+}
+
+model_is_allowed() {
+  local model="$1"
+  shift
+  local allowed
+  for allowed in "$@"; do
+    [[ "$model" == "$allowed" ]] && return 0
+  done
+  return 1
+}
+
+default_model_for_invocation() {
+  case "$1" in
+    *4bit*)
+      printf '%s\n' "$LIGHT_MODEL"
+      ;;
+    *8bit*)
+      printf '%s\n' "$DEFAULT_MODEL"
+      ;;
+    *)
+      printf '%s\n' "$DEFAULT_MODEL"
+      ;;
+  esac
+}
+
+lock_enabled_for_invocation() {
+  if [[ "${CODEX_LM_STUDIO_ALLOW_PARALLEL_SESSIONS:-0}" == "1" ]]; then
+    return 1
+  fi
+
+  case "$1" in
+    *parallel*|*multi*|*concurrent*)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+parallel_for_invocation() {
+  if [[ -n "${CODEX_LM_STUDIO_PARALLEL:-}" ]]; then
+    printf '%s\n' "$CODEX_LM_STUDIO_PARALLEL"
+    return 0
+  fi
+
+  case "$1" in
+    *parallel*|*multi*|*concurrent*)
+      printf '%s\n' "$DEFAULT_MULTI_SESSION_PARALLEL"
+      ;;
+    *)
+      printf '%s\n' "$DEFAULT_PARALLEL"
+      ;;
+  esac
+}
+
+toml_string() {
+  jq -Rn --arg value "$1" '$value'
+}
+
+context_at_least_min() {
+  local value="$1"
+  local min="$2"
+  local name="$3"
+
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "$name must be an integer token count, got: $value" >&2
+    exit 2
+  fi
+
+  if (( value < min )); then
+    value="$min"
+  fi
+  printf '%s\n' "$value"
+}
+
+positive_number() {
+  local value="$1"
+  local name="$2"
+  if ! awk -v value="$value" 'BEGIN { exit !(value + 0 > 0) }'; then
+    echo "$name must be a positive number, got: $value" >&2
+    exit 2
+  fi
+}
+
+has_model_arg() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -m|--model|--model=*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+model_arg_value() {
+  local args=("$@")
+  local arg i
+
+  for i in "${!args[@]}"; do
+    arg="${args[$i]}"
+    case "$arg" in
+      -m|--model)
+        if (( i + 1 < ${#args[@]} )); then
+          printf '%s\n' "${args[$((i + 1))]}"
+          return 0
+        fi
+        return 1
+        ;;
+      --model=*)
+        printf '%s\n' "${arg#--model=}"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+validate_only_model_arg() {
+  local -a allowed=("$@")
+  local args=("${CODEX_LM_STUDIO_ORIGINAL_ARGS[@]}")
+  local arg model i
+
+  for i in "${!args[@]}"; do
+    arg="${args[$i]}"
+    case "$arg" in
+      -m|--model)
+        if (( i + 1 >= ${#args[@]} )); then
+          echo "$arg requires a model value" >&2
+          exit 2
+        fi
+        model="${args[$((i + 1))]}"
+        if ! model_is_allowed "$model" "${allowed[@]}"; then
+          echo "codex-lm-studio only allows models: $(allowed_models_label "${allowed[@]}"); got: $model" >&2
+          exit 2
+        fi
+        ;;
+      --model=*)
+        model="${arg#--model=}"
+        if ! model_is_allowed "$model" "${allowed[@]}"; then
+          echo "codex-lm-studio only allows models: $(allowed_models_label "${allowed[@]}"); got: $model" >&2
+          exit 2
+        fi
+        ;;
+    esac
+  done
+}
+
+ensure_root_key() {
+  local config_file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp_file
+
+  tmp_file="$(mktemp "${config_file}.tmp.XXXXXX")"
+  awk -v key="$key" -v value="$value" '
+    BEGIN {
+      in_root = 1
+      wrote_key = 0
+      key_line = key " = " value
+      key_re = "^[[:space:]]*" key "[[:space:]]*="
+    }
+
+    /^[[:space:]]*\[/ {
+      if (!wrote_key) {
+        print key_line
+        print ""
+        wrote_key = 1
+      }
+      in_root = 0
+    }
+
+    $0 ~ key_re {
+      if (in_root && !wrote_key) {
+        print key_line
+        wrote_key = 1
+      }
+      next
+    }
+
+    { print }
+
+    END {
+      if (!wrote_key) {
+        if (NR > 0) {
+          print ""
+        }
+        print key_line
+      }
+    }
+  ' "$config_file" >"$tmp_file"
+  mv "$tmp_file" "$config_file"
+  chmod 600 "$config_file"
+}
+
+lock_info_path() {
+  local lm_home="${CODEX_LM_STUDIO_HOME:-$HOME/.codex-lm-studio}"
+  local lock_dir="${CODEX_LM_STUDIO_LOCK_DIR:-$lm_home/locks}"
+  printf '%s/modelcodex.lock.info\n' "$lock_dir"
+}
+
+print_existing_session() {
+  local info="$1"
+  echo "Another modelcodex/codex-lm-studio session is already running; exiting." >&2
+  if [[ -s "$info" ]]; then
+    echo "Lock holder:" >&2
+    sed -n '1,8p' "$info" >&2 || true
+  fi
+}
+
+run_with_session_lock() {
+  if [[ "${CODEX_LM_STUDIO_LOCKED:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  if ! lock_enabled_for_invocation "$INVOCATION_NAME"; then
+    export CODEX_LM_STUDIO_LOCKED=1
+    export CODEX_LM_STUDIO_LOCK_INFO=""
+    return 0
+  fi
+
+  local lm_home="${CODEX_LM_STUDIO_HOME:-$HOME/.codex-lm-studio}"
+  local lock_dir="${CODEX_LM_STUDIO_LOCK_DIR:-$lm_home/locks}"
+  local lock_file="${CODEX_LM_STUDIO_LOCK_FILE:-$lock_dir/modelcodex.lock}"
+  local info="$lock_file.info"
+
+  mkdir -p "$lm_home" "$lock_dir"
+  chmod 700 "$lm_home" "$lock_dir" 2>/dev/null || true
+
+  exec 9>"$lock_file"
+  if command -v flock >/dev/null 2>&1; then
+    if ! flock -n 9; then
+      print_existing_session "$info"
+      exit 75
+    fi
+  elif command -v lockf >/dev/null 2>&1; then
+    if ! lockf -s -t 0 9; then
+      print_existing_session "$info"
+      exit 75
+    fi
+  else
+    local atomic_dir="$lock_file.dir"
+    if ! mkdir "$atomic_dir" 2>/dev/null; then
+      print_existing_session "$info"
+      exit 75
+    fi
+    trap 'rm -rf "$atomic_dir"' EXIT
+  fi
+
+  export CODEX_LM_STUDIO_LOCKED=1
+  export CODEX_LM_STUDIO_LOCK_INFO="$info"
+}
+
+write_lock_info() {
+  local info="${CODEX_LM_STUDIO_LOCK_INFO:-}"
+  [[ -n "$info" ]] || return 0
+
+  {
+    printf 'pid=%s\n' "$$"
+    printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'command=%s\n' "$INVOCATION_NAME"
+    printf 'model=%s\n' "$1"
+    printf 'cwd=%s\n' "$(pwd)"
+  } >"$info"
+  trap 'rm -f "$info"' EXIT
+}
+
+prepare_codex_home() {
+  local primary_home="$1"
+  local lm_home="$2"
+
+  mkdir -p "$lm_home"
+  chmod 700 "$lm_home"
+
+  if [[ ! -e "$lm_home/config.toml" ]]; then
+    if [[ -f "$primary_home/config.toml" ]]; then
+      cp "$primary_home/config.toml" "$lm_home/config.toml"
+    else
+      : >"$lm_home/config.toml"
+    fi
+    chmod 600 "$lm_home/config.toml"
+  fi
+
+  if [[ -f "$lm_home/auth.json" && ! -s "$lm_home/auth.json" ]]; then
+    rm "$lm_home/auth.json"
+  fi
+
+  if [[ -d "$primary_home" ]]; then
+    local path name
+    shopt -s nullglob dotglob
+    for path in "$primary_home"/*; do
+      name="${path##*/}"
+      case "$name" in
+        .|..|auth.json|config.toml)
+          continue
+          ;;
+      esac
+      [[ -e "$lm_home/$name" ]] || ln -s "$path" "$lm_home/$name"
+    done
+    shopt -u nullglob dotglob
+  fi
+}
+
+main() {
+  CODEX_LM_STUDIO_ORIGINAL_ARGS=("$@")
+  run_with_session_lock "$@"
+
+  local -a allowed=("$DEFAULT_MODEL" "$LIGHT_MODEL")
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is required by codex-lm-studio" >&2
+    exit 1
+  fi
+
+  if [[ ! -s "$CATALOG_PATH" ]]; then
+    echo "Model catalog is missing: $CATALOG_PATH" >&2
+    exit 1
+  fi
+
+  local primary_home="${CODEX_PRIMARY_HOME:-$HOME/.codex}"
+  local lm_home="${CODEX_LM_STUDIO_HOME:-$HOME/.codex-lm-studio}"
+  local lm_model="${CODEX_LM_STUDIO_MODEL:-$(default_model_for_invocation "$INVOCATION_NAME")}"
+  local requested_model
+  local lm_context_length
+  local lm_compact_limit
+  local max_memory_gib="${CODEX_LM_STUDIO_MAX_MEMORY_GIB:-$DEFAULT_MAX_MEMORY_GIB}"
+  local reserve_memory_gib="${CODEX_LM_STUDIO_RESERVE_MEMORY_GIB:-$DEFAULT_RESERVE_MEMORY_GIB}"
+  local parallel
+  parallel="$(parallel_for_invocation "$INVOCATION_NAME")"
+
+  positive_number "$max_memory_gib" "CODEX_LM_STUDIO_MAX_MEMORY_GIB"
+  positive_number "$reserve_memory_gib" "CODEX_LM_STUDIO_RESERVE_MEMORY_GIB"
+  if [[ ! "$parallel" =~ ^[0-9]+$ || "$parallel" == "0" ]]; then
+    echo "CODEX_LM_STUDIO_PARALLEL must be a positive integer, got: $parallel" >&2
+    exit 2
+  fi
+
+  validate_only_model_arg "${allowed[@]}"
+  requested_model="$(model_arg_value "$@" || true)"
+  if [[ -n "$requested_model" ]]; then
+    lm_model="$requested_model"
+  fi
+
+  if ! model_is_allowed "$lm_model" "${allowed[@]}"; then
+    echo "codex-lm-studio only allows CODEX_LM_STUDIO_MODEL in: $(allowed_models_label "${allowed[@]}"); got: $lm_model" >&2
+    exit 2
+  fi
+
+  lm_context_length="$(context_at_least_min "${CODEX_LM_STUDIO_CONTEXT_LENGTH:-$MIN_CONTEXT_LENGTH}" "$MIN_CONTEXT_LENGTH" "CODEX_LM_STUDIO_CONTEXT_LENGTH")"
+  lm_compact_limit="${CODEX_LM_STUDIO_AUTO_COMPACT_TOKEN_LIMIT:-$(((lm_context_length * 80 + 99) / 100))}"
+
+  write_lock_info "$lm_model"
+  prepare_codex_home "$primary_home" "$lm_home"
+
+  local ensure_bin="${CODEX_LM_STUDIO_ENSURE_BIN:-$REPO_ROOT/bin/ensure-lmstudio-codex-model}"
+  if [[ ! -x "$ensure_bin" ]] && command -v ensure-lmstudio-codex-model >/dev/null 2>&1; then
+    ensure_bin="$(command -v ensure-lmstudio-codex-model)"
+  fi
+
+  if [[ -x "$ensure_bin" ]]; then
+    CODEX_LM_STUDIO_MODEL="$lm_model" \
+      CODEX_LM_STUDIO_CONTEXT_LENGTH="$lm_context_length" \
+      CODEX_LM_STUDIO_MAX_MEMORY_GIB="$max_memory_gib" \
+      CODEX_LM_STUDIO_RESERVE_MEMORY_GIB="$reserve_memory_gib" \
+      CODEX_LM_STUDIO_PARALLEL="$parallel" \
+      CODEX_LM_STUDIO_STRICT=1 \
+      "$ensure_bin"
+  fi
+
+  ensure_root_key "$lm_home/config.toml" "cli_auth_credentials_store" '"file"'
+  ensure_root_key "$lm_home/config.toml" "oss_provider" '"lmstudio"'
+  ensure_root_key "$lm_home/config.toml" "model" "$(toml_string "$lm_model")"
+  ensure_root_key "$lm_home/config.toml" "model_reasoning_effort" '"low"'
+  ensure_root_key "$lm_home/config.toml" "model_reasoning_summary" '"none"'
+  ensure_root_key "$lm_home/config.toml" "model_context_window" "$lm_context_length"
+  ensure_root_key "$lm_home/config.toml" "model_auto_compact_token_limit" "$lm_compact_limit"
+  ensure_root_key "$lm_home/config.toml" "model_catalog_json" "$(toml_string "$CATALOG_PATH")"
+
+  local -a codex_args=(
+    --oss
+    --local-provider lmstudio
+    --config 'model_reasoning_effort="low"'
+    --config 'model_reasoning_summary="none"'
+    --config "model_context_window=$lm_context_length"
+    --config "model_auto_compact_token_limit=$lm_compact_limit"
+    --config "model_catalog_json=$(toml_string "$CATALOG_PATH")"
+    --dangerously-bypass-approvals-and-sandbox
+  )
+
+  if ! has_model_arg "$@"; then
+    codex_args+=(--model "$lm_model")
+  fi
+
+  CODEX_HOME="$lm_home" exec codex "${codex_args[@]}" "$@"
+}
+
+main "$@"

@@ -1,0 +1,31 @@
+# Local runtime and research artifacts
+tmp/
+.tmp/
+*.log
+*.lock
+*.lock.info
+
+# Local environment and credentials
+.env
+.env.*
+*.pem
+*.key
+*.token
+auth.json
+hosts.yml
+
+# Codex and LM Studio local state
+.codex/
+.codex-lm-studio/
+.lmstudio/
+model-catalogs/
+sessions/
+history.jsonl
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# macOS/editor noise
+.DS_Store
+.vscode/
+.idea/
