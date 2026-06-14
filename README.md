@@ -1,6 +1,6 @@
 # LM Studio Codex Setup
 
-Opinionated launcher scripts for running Codex against LM Studio's local OpenAI-compatible API on Apple Silicon.
+Opinionated Python launchers for running Codex against LM Studio's local OpenAI-compatible API on Apple Silicon.
 
 The default target is `qwen3.5-9b-mlx@8bit` with LM Studio loaded for 4 parallel predictions. On a MacBook Pro M3 Max with 36 GB unified memory, this model has been smooth in daily Codex use and LM Studio estimates about 13.63 GiB at 128K context. The `4bit` launcher remains available as a lower-memory fallback. Larger local models such as 27B and 35B are intentionally excluded from the normal aliases because they are too heavy for the 24 GiB model-memory budget used here.
 
@@ -32,9 +32,9 @@ The launcher keeps Codex state isolated in `~/.codex-lm-studio` while symlinking
 - LM Studio 0.4.2 or newer, installed and signed in/configured enough for `lms` to list and load local models.
 - `qwen3.5-9b-mlx@8bit` downloaded in LM Studio.
 - Optional but recommended: `qwen3.5-9b-mlx@4bit`, `qwen3.6-27b-mlx`, and `qwen/qwen3.6-35b-a3b`.
-- `codex`, `lms`, and `jq` on `PATH`.
+- `uv`, `codex`, and `lms` on `PATH`.
 
-The scripts prepend `~/.lmstudio/bin`, Homebrew paths, and system paths, so the default LM Studio CLI location works without extra shell setup.
+The launchers are Python shims that run the repo package through `uv`, so dependencies come from the checked-in `pyproject.toml` and `uv.lock`. They prepend `~/.lmstudio/bin`, Homebrew paths, and system paths, so the default LM Studio CLI location works without extra shell setup.
 
 ## Install
 
@@ -106,7 +106,7 @@ make estimates
 make links
 ```
 
-`make validate` is the main gate. It runs shell/catalog checks, verifies the Codex model catalog parses, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates. `make estimates` is safe: it only calls the LM Studio estimator and does not load or unload models.
+`make validate` is the main gate. It runs Python syntax checks, validates the Codex model catalog with Pydantic, runs Ruff lint/format checks, verifies the catalog parses in Codex, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates. `make estimates` is safe: it only calls the LM Studio estimator and does not load or unload models.
 
 ## Playground Downloads
 
@@ -116,7 +116,7 @@ Extra MLX-only model downloads are kept out of validation. To try the curated sm
 make download-playground-mlx
 ```
 
-Override `PLAYGROUND_MLX_MODELS` to try a different list. The target uses `lms get --mlx --yes` and skips entries LM Studio cannot resolve as MLX artifacts.
+Override `PLAYGROUND_MLX_MODELS` to try a different list. The default list uses LM Studio hub model IDs with known MLX variants. The target runs `lms get --mlx --yes` and skips entries LM Studio cannot resolve as MLX artifacts.
 
 ## Research Summary
 

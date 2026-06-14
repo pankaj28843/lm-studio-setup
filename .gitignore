@@ -4,6 +4,11 @@ tmp/
 *.log
 *.lock
 *.lock.info
+!uv.lock
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
 
 # Local environment and credentials
 .env

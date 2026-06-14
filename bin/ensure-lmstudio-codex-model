@@ -1,229 +1,28 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+from __future__ import annotations
 
-PATH="$HOME/.lmstudio/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+import os
+import sys
+from pathlib import Path
 
-LMS_BIN="${LMS_BIN:-$HOME/.lmstudio/bin/lms}"
-DEFAULT_MODEL="qwen3.5-9b-mlx@8bit"
-LIGHT_MODEL="qwen3.5-9b-mlx@4bit"
-EXPERIMENTAL_27B_MODEL="qwen3.6-27b-mlx"
-EXPERIMENTAL_35B_MODEL="qwen/qwen3.6-35b-a3b"
-MODEL="${CODEX_LM_STUDIO_MODEL:-$DEFAULT_MODEL}"
-MIN_CONTEXT_LENGTH=131072
-CONTEXT_LENGTH="${CODEX_LM_STUDIO_CONTEXT_LENGTH:-$MIN_CONTEXT_LENGTH}"
-MAX_MEMORY_GIB="${CODEX_LM_STUDIO_MAX_MEMORY_GIB:-24}"
-RESERVE_MEMORY_GIB="${CODEX_LM_STUDIO_RESERVE_MEMORY_GIB:-12}"
-PARALLEL="${CODEX_LM_STUDIO_PARALLEL:-4}"
-PORT="${LM_STUDIO_PORT:-1234}"
-BIND_ADDRESS="${LM_STUDIO_BIND_ADDRESS:-127.0.0.1}"
-ESTIMATE_ONLY=0
 
-case "${1:-}" in
-  --estimate-only)
-    ESTIMATE_ONLY=1
-    shift
-    ;;
-  "")
-    ;;
-  *)
-    echo "Usage: ensure-lmstudio-codex-model [--estimate-only]" >&2
-    exit 2
-    ;;
-esac
+def main() -> None:
+    script = Path(__file__).resolve()
+    repo_root = script.parents[1]
+    os.execvp(
+        "uv",
+        [
+            "uv",
+            "run",
+            "--project",
+            str(repo_root),
+            "python",
+            "-m",
+            "lmstudio_setup.ensure_cli",
+            *sys.argv[1:],
+        ],
+    )
 
-allowed_models_label() {
-  printf '%s, %s, %s, %s\n' "$DEFAULT_MODEL" "$LIGHT_MODEL" "$EXPERIMENTAL_27B_MODEL" "$EXPERIMENTAL_35B_MODEL"
-}
 
-model_is_allowed() {
-  case "$1" in
-    "$DEFAULT_MODEL"|"$LIGHT_MODEL"|"$EXPERIMENTAL_27B_MODEL"|"$EXPERIMENTAL_35B_MODEL")
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-die() {
-  echo "$*" >&2
-  exit 1
-}
-
-validate_number() {
-  local value="$1"
-  local name="$2"
-  if ! awk -v value="$value" 'BEGIN { exit !(value + 0 > 0) }'; then
-    echo "$name must be a positive number, got: $value" >&2
-    exit 2
-  fi
-}
-
-validate_integer() {
-  local value="$1"
-  local name="$2"
-  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
-    echo "$name must be a positive integer, got: $value" >&2
-    exit 2
-  fi
-  if (( value == 0 )); then
-    echo "$name must be greater than zero" >&2
-    exit 2
-  fi
-}
-
-physical_memory_gib() {
-  local bytes
-  bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
-  if [[ "$bytes" =~ ^[0-9]+$ ]]; then
-    awk -v bytes="$bytes" 'BEGIN { printf "%.2f\n", bytes / 1024 / 1024 / 1024 }'
-  fi
-}
-
-unit_to_gib() {
-  local value="$1"
-  local unit="$2"
-  case "$unit" in
-    GiB|Gib|gib)
-      awk -v value="$value" 'BEGIN { printf "%.2f\n", value }'
-      ;;
-    GB|Gb|gb)
-      awk -v value="$value" 'BEGIN { printf "%.2f\n", value * 1000 * 1000 * 1000 / 1024 / 1024 / 1024 }'
-      ;;
-    MiB|Mib|mib)
-      awk -v value="$value" 'BEGIN { printf "%.2f\n", value / 1024 }'
-      ;;
-    MB|Mb|mb)
-      awk -v value="$value" 'BEGIN { printf "%.2f\n", value * 1000 * 1000 / 1024 / 1024 / 1024 }'
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-estimate_total_memory_gib() {
-  local estimate_file="$1"
-  local value unit
-  read -r value unit < <(
-    awk '/Estimated Total Memory:/ { print $4, $5; exit }' "$estimate_file"
-  )
-  [[ -n "${value:-}" && -n "${unit:-}" ]] || return 1
-  unit_to_gib "$value" "$unit"
-}
-
-estimate_gpu_memory_gib() {
-  local estimate_file="$1"
-  local value unit
-  read -r value unit < <(
-    awk '/Estimated GPU Memory:/ { print $4, $5; exit }' "$estimate_file"
-  )
-  [[ -n "${value:-}" && -n "${unit:-}" ]] || return 1
-  unit_to_gib "$value" "$unit"
-}
-
-if ! model_is_allowed "$MODEL"; then
-  echo "ensure-lmstudio-codex-model only allows CODEX_LM_STUDIO_MODEL in: $(allowed_models_label); got: $MODEL" >&2
-  exit 2
-fi
-
-validate_integer "$CONTEXT_LENGTH" "CODEX_LM_STUDIO_CONTEXT_LENGTH"
-validate_integer "$PARALLEL" "CODEX_LM_STUDIO_PARALLEL"
-validate_number "$MAX_MEMORY_GIB" "CODEX_LM_STUDIO_MAX_MEMORY_GIB"
-validate_number "$RESERVE_MEMORY_GIB" "CODEX_LM_STUDIO_RESERVE_MEMORY_GIB"
-
-if (( CONTEXT_LENGTH < MIN_CONTEXT_LENGTH )); then
-  CONTEXT_LENGTH="$MIN_CONTEXT_LENGTH"
-fi
-
-if [[ ! -x "$LMS_BIN" ]]; then
-  die "lms CLI not found or not executable: $LMS_BIN"
-fi
-if ! command -v jq >/dev/null 2>&1; then
-  die "jq is required to inspect LM Studio model state"
-fi
-
-physical_gib="$(physical_memory_gib || true)"
-if [[ -n "$physical_gib" ]]; then
-  if ! awk -v total="$physical_gib" -v max="$MAX_MEMORY_GIB" -v reserve="$RESERVE_MEMORY_GIB" 'BEGIN { exit !(total + 0 >= max + reserve) }'; then
-    echo "This machine reports ${physical_gib} GiB RAM, which is below the requested ${MAX_MEMORY_GIB} GiB model budget plus ${RESERVE_MEMORY_GIB} GiB reserve." >&2
-    exit 1
-  fi
-fi
-
-if ! "$LMS_BIN" server status >/dev/null 2>&1; then
-  "$LMS_BIN" server start --port "$PORT" --bind "$BIND_ADDRESS"
-fi
-
-estimate_file="$(mktemp "${TMPDIR:-/tmp}/lmstudio-codex-estimate.XXXXXX")"
-trap 'rm -f "$estimate_file"' EXIT
-
-if ! "$LMS_BIN" load "$MODEL" \
-  --context-length "$CONTEXT_LENGTH" \
-  --parallel "$PARALLEL" \
-  --estimate-only \
-  --yes >"$estimate_file" 2>&1; then
-  cat "$estimate_file" >&2
-  exit 1
-fi
-
-total_gib="$(estimate_total_memory_gib "$estimate_file" || true)"
-gpu_gib="$(estimate_gpu_memory_gib "$estimate_file" || true)"
-if [[ -z "$total_gib" ]]; then
-  cat "$estimate_file" >&2
-  die "Could not parse LM Studio memory estimate for $MODEL"
-fi
-
-if ! awk -v estimate="$total_gib" -v max="$MAX_MEMORY_GIB" 'BEGIN { exit !(estimate + 0 <= max + 0) }'; then
-  cat "$estimate_file" >&2
-  echo "Refusing to load $MODEL: estimated total memory ${total_gib} GiB exceeds CODEX_LM_STUDIO_MAX_MEMORY_GIB=${MAX_MEMORY_GIB}." >&2
-  exit 75
-fi
-
-if (( ESTIMATE_ONLY == 1 )); then
-  cat "$estimate_file"
-  printf 'Parsed total estimate: %s GiB; parsed GPU estimate: %s GiB; budget: %s GiB; reserve: %s GiB.\n' \
-    "$total_gib" "${gpu_gib:-unknown}" "$MAX_MEMORY_GIB" "$RESERVE_MEMORY_GIB"
-  exit 0
-fi
-
-if grep -qi 'will fail to load based on your resource guardrails' "$estimate_file"; then
-  cat "$estimate_file" >&2
-  echo "Refusing to unload/reload models: LM Studio resource guardrails predict $MODEL will fail to load." >&2
-  echo "Raise LM Studio's model-loading guardrails or reduce CODEX_LM_STUDIO_CONTEXT_LENGTH before trying this alias." >&2
-  exit 75
-fi
-
-"$LMS_BIN" ps --json |
-  jq -r --arg model "$MODEL" '.[] | select(.identifier != $model) | .identifier' |
-  while IFS= read -r identifier; do
-    [[ -n "$identifier" ]] || continue
-    "$LMS_BIN" unload "$identifier" >/dev/null 2>&1 || true
-  done
-
-if "$LMS_BIN" ps --json |
-  jq -e --arg model "$MODEL" --argjson context "$CONTEXT_LENGTH" --argjson parallel "$PARALLEL" '
-    any(.[]; .identifier == $model and .contextLength >= $context and ((.parallel // 1) >= $parallel))
-  ' >/dev/null; then
-  printf 'LM Studio already has %s loaded: total estimate %s GiB, GPU estimate %s GiB, context %s, parallel %s.\n' \
-    "$MODEL" "$total_gib" "${gpu_gib:-unknown}" "$CONTEXT_LENGTH" "$PARALLEL" >&2
-  exit 0
-fi
-
-"$LMS_BIN" unload "$MODEL" >/dev/null 2>&1 || true
-
-if ! "$LMS_BIN" load "$MODEL" \
-  --context-length "$CONTEXT_LENGTH" \
-  --parallel "$PARALLEL" \
-  --identifier "$MODEL" \
-  --yes; then
-  echo "LM Studio has not made $MODEL loadable yet; waiting for Desktop download/indexing to finish." >&2
-  if [[ "${CODEX_LM_STUDIO_STRICT:-0}" == "1" ]]; then
-    exit 75
-  fi
-  exit 0
-fi
-
-printf 'Loaded %s for Codex: total estimate %s GiB, GPU estimate %s GiB, context %s, parallel %s.\n' \
-  "$MODEL" "$total_gib" "${gpu_gib:-unknown}" "$CONTEXT_LENGTH" "$PARALLEL" >&2
+if __name__ == "__main__":
+    main()

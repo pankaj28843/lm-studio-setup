@@ -1,0 +1,39 @@
+[project]
+name = "lm-studio-setup"
+version = "0.1.0"
+description = "Python tooling for Codex launchers backed by LM Studio."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7,<3",
+]
+
+[project.scripts]
+lmstudio-setup = "lmstudio_setup.repo_tools:main"
+codex-lm-studio-py = "lmstudio_setup.codex_launcher:main"
+ensure-lmstudio-codex-model-py = "lmstudio_setup.ensure_cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lmstudio_setup"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "I", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
