@@ -15,15 +15,27 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from lmstudio_setup.catalog import validate_catalog
+from lmstudio_setup.catalog_builder import write_catalog
 from lmstudio_setup.constants import (
-    ALIASES,
+    DEFAULT_MODEL,
     EMBEDDING_MODELS,
     EXPERIMENTAL_35B_MODEL,
     LEGACY_ALIASES,
+    MODEL_PACKS,
     PLAYGROUND_MLX_MODELS,
     SUPPORTED_MODELS,
+    ModelDownloadSpec,
 )
 from lmstudio_setup.lmstudio import ensure_model, options_from_env, parse_memory_estimate
+from lmstudio_setup.local_models import (
+    ALIAS_PREFIX,
+    ModelAlias,
+    default_lms_bin,
+    embedding_model_keys,
+    list_local_models,
+    llm_model_keys,
+    model_aliases,
+)
 from lmstudio_setup.paths import repo_root, with_default_path
 from lmstudio_setup.process import run_command
 
@@ -68,27 +80,50 @@ def replace_symlink(target: Path, source: Path) -> None:
     target.symlink_to(source)
 
 
-def install(bin_dir: Path) -> int:
+def managed_launcher_aliases(bin_dir: Path) -> list[str]:
+    aliases: list[str] = []
+    if not bin_dir.is_dir():
+        return aliases
+    for target in bin_dir.iterdir():
+        if target.name == "ensure-lmstudio-codex-model":
+            continue
+        if target.name.startswith(ALIAS_PREFIX) and managed_target(target):
+            aliases.append(target.name)
+    return sorted(aliases)
+
+
+async def dynamic_aliases() -> tuple[ModelAlias, ...]:
+    models = await list_local_models(default_lms_bin())
+    return model_aliases(models, DEFAULT_MODEL)
+
+
+async def install(bin_dir: Path) -> int:
     bin_dir.mkdir(parents=True, exist_ok=True)
     main = main_script()
     ensure = ensure_script()
     main.chmod(0o755)
     ensure.chmod(0o755)
+    aliases = await dynamic_aliases()
+    desired = {alias.alias for alias in aliases}
 
-    for name in LEGACY_ALIASES:
+    for name in (*LEGACY_ALIASES, *managed_launcher_aliases(bin_dir)):
         target = bin_dir / name
-        if managed_target(target):
+        if name not in desired and managed_target(target):
             target.unlink()
 
-    for name in ALIASES:
-        replace_symlink(bin_dir / name, main)
+    for alias in aliases:
+        replace_symlink(bin_dir / alias.alias, main)
     replace_symlink(bin_dir / "ensure-lmstudio-codex-model", ensure)
-    print(f"Installed LM Studio Codex launchers into {bin_dir}")
+    print(f"Installed {len(aliases)} LM Studio Codex launchers into {bin_dir}")
     return 0
 
 
 def uninstall(bin_dir: Path) -> int:
-    for name in (*ALIASES, *LEGACY_ALIASES, "ensure-lmstudio-codex-model"):
+    for name in (
+        *managed_launcher_aliases(bin_dir),
+        *LEGACY_ALIASES,
+        "ensure-lmstudio-codex-model",
+    ):
         target = bin_dir / name
         if managed_target(target):
             target.unlink()
@@ -96,8 +131,9 @@ def uninstall(bin_dir: Path) -> int:
     return 0
 
 
-def links(bin_dir: Path) -> int:
-    for name in (*ALIASES, "ensure-lmstudio-codex-model"):
+async def links(bin_dir: Path) -> int:
+    aliases = await dynamic_aliases()
+    for name in (*(alias.alias for alias in aliases), "ensure-lmstudio-codex-model"):
         target = bin_dir / name
         if target.is_symlink():
             print(f"{name:<44} -> {os.readlink(target)}")
@@ -127,8 +163,11 @@ async def validate_codex_catalog() -> int:
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp_home:
+        dynamic_catalog = Path(tmp_home) / "lmstudio-model-catalog.json"
+        local_models = await list_local_models(default_lms_bin())
+        write_catalog(dynamic_catalog, catalog_path(), local_models)
         env = with_default_path({"CODEX_HOME": tmp_home})
-        config_arg = f'model_catalog_json="{catalog_path()}"'
+        config_arg = f'model_catalog_json="{dynamic_catalog}"'
         result = await run_command(
             ["codex", "debug", "models", "-c", config_arg],
             env=env,
@@ -191,12 +230,25 @@ async def public_scan() -> int:
 
 
 async def estimates(parallel: int) -> int:
-    for spec in SUPPORTED_MODELS:
-        max_memory = 32.0 if spec.model_id == EXPERIMENTAL_35B_MODEL else spec.max_memory_gib
-        reserve = 4.0 if spec.model_id == EXPERIMENTAL_35B_MODEL else spec.reserve_memory_gib
+    for model in llm_model_keys(await list_local_models(default_lms_bin())):
+        spec = next((item for item in SUPPORTED_MODELS if item.model_id == model), None)
+        max_memory = (
+            32.0
+            if model == EXPERIMENTAL_35B_MODEL
+            else spec.max_memory_gib
+            if spec is not None
+            else 24.0
+        )
+        reserve = (
+            4.0
+            if model == EXPERIMENTAL_35B_MODEL
+            else spec.reserve_memory_gib
+            if spec is not None
+            else 12.0
+        )
         try:
             options = options_from_env(
-                model=spec.model_id,
+                model=model,
                 parallel=parallel,
                 max_memory_gib=max_memory,
                 reserve_memory_gib=reserve,
@@ -221,14 +273,14 @@ def models_from_env_or_args(models: Iterable[str]) -> list[str]:
     return list(PLAYGROUND_MLX_MODELS)
 
 
-def embedding_models_from_env_or_args(models: Iterable[str]) -> list[str]:
+async def embedding_models_from_env_or_args(models: Iterable[str]) -> list[str]:
     explicit = [model for model in models if model]
     if explicit:
         return explicit
     env_value = os.environ.get("EMBEDDING_MODELS", "")
     if env_value.strip():
         return env_value.split()
-    return [spec.model_id for spec in EMBEDDING_MODELS]
+    return list(embedding_model_keys(await list_local_models(default_lms_bin())))
 
 
 def embedding_download_source(model: str) -> str:
@@ -255,20 +307,48 @@ async def download_playground_mlx(models: list[str]) -> int:
     return 0
 
 
-async def download_embedding_models(models: list[str]) -> int:
+def download_command(lms: Path, spec: ModelDownloadSpec) -> list[str]:
+    command = [str(lms), "get"]
+    if spec.kind == "mlx":
+        command.append("--mlx")
+    elif spec.kind == "gguf":
+        command.append("--gguf")
+    command.extend(["--yes", spec.source])
+    return command
+
+
+async def download_specs(specs: Iterable[ModelDownloadSpec]) -> int:
     lms = Path(os.environ.get("LMS_BIN", str(Path.home() / ".lmstudio" / "bin" / "lms")))
     failed = False
-    for model in models:
-        source = embedding_download_source(model)
-        print(f"Downloading embedding model: {source}")
-        command = [str(lms), "get", "--yes", source]
-        if source.startswith("https://huggingface.co/"):
-            command = [str(lms), "get", "--gguf", "--yes", source]
-        result = await run_command(command, env=with_default_path(), capture=False)
+    for spec in specs:
+        print(f"Downloading {spec.kind} model: {spec.source}")
+        result = await run_command(
+            download_command(lms, spec),
+            env=with_default_path(),
+            capture=False,
+        )
         if result.returncode != 0:
-            print(f"Failed to download embedding model: {source}", file=sys.stderr)
+            print(f"Failed to download model: {spec.source}", file=sys.stderr)
             failed = True
     return 1 if failed else 0
+
+
+async def download_model_pack(pack: str) -> int:
+    specs = MODEL_PACKS.get(pack)
+    if specs is None:
+        available = ", ".join(sorted(MODEL_PACKS))
+        print(f"Unknown model pack: {pack}; available packs: {available}", file=sys.stderr)
+        return 2
+    return await download_specs(specs)
+
+
+async def download_embedding_models(models: list[str]) -> int:
+    specs: list[ModelDownloadSpec] = []
+    for model in models:
+        source = embedding_download_source(model)
+        kind = "gguf" if source.startswith("https://huggingface.co/") else "auto"
+        specs.append(ModelDownloadSpec(source, kind))
+    return await download_specs(specs)
 
 
 async def embedding_estimates(models: list[str]) -> int:
@@ -294,6 +374,14 @@ async def embedding_estimates(models: list[str]) -> int:
             else f"{model}: total estimate {estimate.total_gib:.2f} GiB, GPU estimate unknown"
         )
     return 0
+
+
+async def embedding_estimates_from_env_or_args(models: Iterable[str]) -> int:
+    return await embedding_estimates(await embedding_models_from_env_or_args(models))
+
+
+async def download_embedding_models_from_env_or_args(models: Iterable[str]) -> int:
+    return await download_embedding_models(await embedding_models_from_env_or_args(models))
 
 
 def require_uv() -> None:
@@ -328,6 +416,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     download_embeddings_parser = subparsers.add_parser("download-embedding-models")
     download_embeddings_parser.add_argument("--model", action="append", default=[])
+
+    download_pack_parser = subparsers.add_parser("download-pack")
+    download_pack_parser.add_argument("pack", choices=sorted(MODEL_PACKS))
     return parser
 
 
@@ -338,11 +429,11 @@ def main(argv: list[str] | None = None) -> None:
 
     match args.command:
         case "install":
-            raise SystemExit(install(args.bin_dir))
+            raise SystemExit(asyncio.run(install(args.bin_dir)))
         case "uninstall":
             raise SystemExit(uninstall(args.bin_dir))
         case "links":
-            raise SystemExit(links(args.bin_dir))
+            raise SystemExit(asyncio.run(links(args.bin_dir)))
         case "check":
             raise SystemExit(check())
         case "validate-codex-catalog":
@@ -352,19 +443,15 @@ def main(argv: list[str] | None = None) -> None:
         case "estimates":
             raise SystemExit(asyncio.run(estimates(args.parallel)))
         case "embedding-estimates":
-            raise SystemExit(
-                asyncio.run(embedding_estimates(embedding_models_from_env_or_args(args.model)))
-            )
+            raise SystemExit(asyncio.run(embedding_estimates_from_env_or_args(args.model)))
         case "download-playground-mlx":
             raise SystemExit(
                 asyncio.run(download_playground_mlx(models_from_env_or_args(args.model)))
             )
         case "download-embedding-models":
-            raise SystemExit(
-                asyncio.run(
-                    download_embedding_models(embedding_models_from_env_or_args(args.model))
-                )
-            )
+            raise SystemExit(asyncio.run(download_embedding_models_from_env_or_args(args.model)))
+        case "download-pack":
+            raise SystemExit(asyncio.run(download_model_pack(args.pack)))
         case _:
             parser.error(f"unknown command: {args.command}")
 

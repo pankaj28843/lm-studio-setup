@@ -2,7 +2,13 @@
 
 ## Verdict
 
-Use `qwen3.5-9b-mlx@8bit` as the default Codex model for a MacBook Pro M3 Max with 36 GB unified memory. Load it through LM Studio with `--parallel 4` so multiple Codex sessions can issue requests concurrently. Keep `qwen3.5-9b-mlx@4bit` as the low-stress fallback. Expose the downloaded MLX sampler as one alias per model so each candidate can be tested directly, including small reasoning, thinking, and multimodal models that estimate below 24 GiB.
+Use `qwen3.5-9b-mlx@8bit` as the default Codex model for a MacBook Pro M3 Max with 36 GB unified memory. Load it through LM Studio with `--parallel 4` so multiple Codex sessions can issue requests concurrently. Keep `qwen3.5-9b-mlx@4bit` as the low-stress fallback. Generate one alias per downloaded LM Studio LLM so each candidate can be tested directly without hardcoding every local model in the repo.
+
+## Dynamic Aliases
+
+`make install` reads LM Studio's local inventory with `lms ls --json`, filters for `llm` models, and installs `codex-lm-studio` plus one `codex-lm-studio-*` alias per downloaded model. The launcher uses the same inventory to map the invocation name back to a model key and writes a generated Codex catalog under `~/.codex-lm-studio/lmstudio-model-catalog.json`.
+
+This keeps LM Studio as the source of truth for local model availability. The repo still keeps a static catalog template and curated model packs, but it no longer needs a hardcoded alias list for every model on the machine.
 
 ## Local Estimates
 
@@ -25,6 +31,11 @@ Measured with LM Studio's CLI estimator at 128K context and `--parallel 4`:
 | `qwen/qwen3-vl-8b` | 7.53 GiB | Playground multimodal vision-language |
 | `zai-org/glm-4.6v-flash` | 9.25 GiB | Playground fast multimodal vision-language |
 | `qwen/qwen3-30b-a3b-thinking-2507` | 22.41 GiB | Experimental thinking; under budget, but LM Studio guardrails currently predict load failure |
+| `qwen/qwen3-30b-a3b-2507` | 22.41 GiB | Experimental general reasoning; under budget, but LM Studio guardrails currently predict load failure |
+| `qwen/qwen3-coder-30b` | 22.41 GiB | Experimental coding; under budget, but LM Studio guardrails currently predict load failure |
+| `qwen/qwen3-vl-30b` | 23.82 GiB | Experimental multimodal; barely under budget, but LM Studio guardrails currently predict load failure |
+| `google/gemma-4-26b-a4b` | 20.39 GiB | Experimental multimodal; under budget, but LM Studio guardrails currently predict load failure |
+| `zai-org/glm-4.7-flash` | 31.76 GiB | Experimental; above 24 GiB budget and guardrails currently predict load failure |
 
 The budget used by this repo is `24` GiB for the model, leaving roughly `12` GiB for macOS, browsers, editors, terminals, and normal work on a 36 GB machine.
 
@@ -51,7 +62,7 @@ The tradeoff is throughput versus per-request latency. LM Studio's local `lms lo
 
 ## Validation
 
-Use `make validate` as the main gate. It checks Python syntax, validates the repo-local Codex model catalog with `codex debug models`, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates for all configured chat and embedding models. The heavy-model estimates are allowed to print LM Studio guardrail warnings; actual non-estimate loads stop before unloading the current working model unless `--lmstudio-override-guardrails` is supplied and the user types `YES`. When no guardrail override is needed, loaded models are only unloaded if the selected model plus already loaded models would exceed the configured memory budget, and only idle models are eligible for unload.
+Use `make validate` as the main gate. It checks Python syntax, validates the static catalog template, generates the local dynamic catalog from LM Studio inventory, verifies that generated catalog with `codex debug models`, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates for all downloaded chat and embedding models. The heavy-model estimates are allowed to print LM Studio guardrail warnings; actual non-estimate loads stop before unloading the current working model unless `--lmstudio-override-guardrails` is supplied and the user types `YES`. When no guardrail override is needed, loaded models are only unloaded if the selected model plus already loaded models would exceed the configured memory budget, and only idle models are eligible for unload.
 
 ## Evidence
 
@@ -91,4 +102,4 @@ LM Studio's CLI docs show embedding models in `lms ls` output and support filter
 
 ## Notes
 
-The 8-bit model has been preferred in real Codex use because it leaves a comfortable memory margin while preserving more quality than the 4-bit variant. The 4-bit launcher is still useful when the machine is busy. The 27B, 30B thinking, 35B, and larger reasoning aliases are intentionally treated as experiments, not daily defaults.
+The 8-bit model has been preferred in real Codex use because it leaves a comfortable memory margin while preserving more quality than the 4-bit variant. The 4-bit launcher is still useful when the machine is busy. The 27B, 30B, 35B, and larger reasoning, coding, and multimodal aliases are intentionally treated as experiments, not daily defaults.

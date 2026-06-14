@@ -15,8 +15,6 @@ from lmstudio_setup.constants import (
     DEFAULT_PARALLEL,
     DEFAULT_PORT,
     MIN_CONTEXT_LENGTH,
-    allowed_models_label,
-    model_is_allowed,
     model_spec,
 )
 from lmstudio_setup.paths import with_default_path
@@ -66,12 +64,9 @@ class EnsureOptions(BaseModel):
 
     @field_validator("model")
     @classmethod
-    def _model_is_supported(cls, value: str) -> str:
-        if not model_is_allowed(value):
-            raise ValueError(
-                f"ensure-lmstudio-codex-model only allows CODEX_LM_STUDIO_MODEL in: "
-                f"{allowed_models_label()}; got: {value}"
-            )
+    def _model_is_non_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("model must not be empty")
         return value
 
     @field_validator("context_length", "parallel", "port")

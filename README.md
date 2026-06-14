@@ -2,29 +2,19 @@
 
 Opinionated Python launchers for running Codex against LM Studio's local OpenAI-compatible API on Apple Silicon.
 
-The default target is `qwen3.5-9b-mlx@8bit` with LM Studio loaded for 4 parallel predictions. On a MacBook Pro M3 Max with 36 GB unified memory, this model has been smooth in daily Codex use and LM Studio estimates about 13.63 GiB at 128K context. The `4bit` launcher remains available as a lower-memory fallback. Larger and playground models are exposed as explicit aliases for manual trials.
+The default target is `qwen3.5-9b-mlx@8bit` with LM Studio loaded for 4 parallel predictions. On a MacBook Pro M3 Max with 36 GB unified memory, this model has been smooth in daily Codex use and LM Studio estimates about 13.63 GiB at 128K context. `make install` asks LM Studio for the downloaded model inventory and creates one `codex-lm-studio-*` alias per local LLM.
 
 ## Supported LLMs
 
-This setup supports these local MLX model IDs:
+Downloaded LM Studio LLMs are the supported Codex models. The repo still keeps curated defaults and descriptions for known models, but the installed aliases and runtime Codex catalog are generated from:
 
-- `qwen3.5-9b-mlx@8bit`: default, preferred Codex model.
-- `qwen3.5-9b-mlx@4bit`: lower-memory fallback.
-- `qwen3.6-27b-mlx`: experimental 27B reasoning/coding model.
-- `qwen/qwen3.6-35b-a3b`: experimental 35B A3B reasoning/coding model.
-- `google/gemma-4-e4b`: playground Gemma model.
-- `microsoft/phi-4-mini-reasoning`: playground small reasoning model.
-- `qwen/qwen3-4b-thinking-2507`: playground tiny Qwen thinking model.
-- `qwen/qwen3-4b-2507`: playground tiny Qwen model.
-- `allenai/olmo-3-7b`: playground OLMo model.
-- `microsoft/phi-4-reasoning`: playground larger reasoning model.
-- `mistralai/magistral-small-2509`: playground larger reasoning model.
-- `deepseek/deepseek-r1-0528-qwen3-8b`: playground compact reasoning model.
-- `qwen/qwen3-vl-8b`: playground multimodal vision-language model.
-- `zai-org/glm-4.6v-flash`: playground fast multimodal vision-language model.
-- `qwen/qwen3-30b-a3b-thinking-2507`: experimental larger thinking model under the 24 GiB local estimate budget.
+```bash
+lms ls --json
+```
 
-The 27B, 30B thinking, 35B, Phi 4 Reasoning, and Magistral aliases are for manual trials. LM Studio may predict that some of them will fail its own resource guardrails at 128K context; the helper refuses by default before unloading the working model, unless you explicitly override and type `YES`.
+Alias names are derived from the LM Studio model key. For example, `qwen/qwen3-vl-30b` becomes `codex-lm-studio-qwen3-vl-30b`; `qwen3.5-9b-mlx@8bit` becomes `codex-lm-studio-qwen3.5-9b-mlx-8bit`. Use `make links` after install to see the exact local alias set.
+
+Large reasoning, thinking, coding, and multimodal models are for manual trials. LM Studio may predict that some of them will fail its own resource guardrails at 128K context; the helper refuses by default before unloading the working model, unless you explicitly override and type `YES`.
 
 ## Embedding Models
 
@@ -37,33 +27,16 @@ Embedding models are managed separately from Codex aliases because they are not 
 
 ## What This Installs
 
-`make install` writes these launchers into `~/.local/bin` by default:
+`make install` writes `codex-lm-studio`, one generated alias per downloaded local LLM, and `ensure-lmstudio-codex-model` into `~/.local/bin` by default. It removes stale managed `codex-lm-studio-*` symlinks that no longer correspond to downloaded LM Studio LLMs.
 
-- `codex-lm-studio`
-- `codex-lm-studio-qwen3.5-9b-mlx-8bit`
-- `codex-lm-studio-qwen3.5-9b-mlx-4bit`
-- `codex-lm-studio-qwen3.6-27b-mlx-4bit`
-- `codex-lm-studio-qwen3.6-35b-a3b`
-- `codex-lm-studio-gemma-4-e4b`
-- `codex-lm-studio-phi-4-mini-reasoning`
-- `codex-lm-studio-qwen3-4b-thinking-2507`
-- `codex-lm-studio-qwen3-4b-2507`
-- `codex-lm-studio-olmo-3-7b`
-- `codex-lm-studio-phi-4-reasoning`
-- `codex-lm-studio-magistral-small-2509`
-- `codex-lm-studio-deepseek-r1-0528-qwen3-8b`
-- `codex-lm-studio-qwen3-vl-8b`
-- `codex-lm-studio-glm-4.6v-flash`
-- `codex-lm-studio-qwen3-30b-a3b-thinking-2507`
-
-The launcher keeps Codex state isolated in `~/.codex-lm-studio` while symlinking non-auth state from `~/.codex`. It also points Codex at the repo-local model catalog in `config/lmstudio-qwen.json`.
+The launcher keeps Codex state isolated in `~/.codex-lm-studio` while symlinking non-auth state from `~/.codex`. At launch time it generates `~/.codex-lm-studio/lmstudio-model-catalog.json` from the static template plus LM Studio's current local LLM inventory, then points Codex at that generated catalog.
 
 ## Prerequisites
 
 - macOS on Apple Silicon.
 - LM Studio 0.4.2 or newer, installed and signed in/configured enough for `lms` to list and load local models.
 - `qwen3.5-9b-mlx@8bit` downloaded in LM Studio.
-- Optional but recommended: the other supported model IDs listed above if you want every alias to load locally.
+- Optional but recommended: run one of the model pack targets below if you want a known sampler.
 - `uv`, `codex`, and `lms` on `PATH`.
 
 The launchers are Python shims that run the repo package through `uv`, so dependencies come from the checked-in `pyproject.toml` and `uv.lock`. They prepend `~/.lmstudio/bin`, Homebrew paths, and system paths, so the default LM Studio CLI location works without extra shell setup.
@@ -103,8 +76,10 @@ codex-lm-studio-qwen3.5-9b-mlx-4bit
 Try the larger experimental MLX models:
 
 ```bash
-codex-lm-studio-qwen3.6-27b-mlx-4bit
+codex-lm-studio-qwen3.6-27b-mlx
 codex-lm-studio-qwen3.6-35b-a3b
+codex-lm-studio-qwen3-coder-30b
+codex-lm-studio-qwen3-vl-30b
 ```
 
 Try the playground models:
@@ -120,6 +95,7 @@ codex-lm-studio-magistral-small-2509
 codex-lm-studio-deepseek-r1-0528-qwen3-8b
 codex-lm-studio-qwen3-vl-8b
 codex-lm-studio-glm-4.6v-flash
+codex-lm-studio-glm-4.7-flash
 codex-lm-studio-qwen3-30b-a3b-thinking-2507
 ```
 
@@ -163,25 +139,35 @@ make embedding-estimates
 make links
 ```
 
-`make validate` is the main gate. It runs Python syntax checks, validates the Codex model catalog with Pydantic, runs Ruff lint/format checks, verifies the catalog parses in Codex, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates for both chat and embedding models. `make estimates` and `make embedding-estimates` are safe: they only call the LM Studio estimator and do not load or unload models.
+`make validate` is the main gate. It runs Python syntax checks, validates the static catalog template with Pydantic, generates the local dynamic Codex catalog from LM Studio inventory, verifies that generated catalog parses in Codex, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates for all downloaded chat and embedding models. `make estimates` and `make embedding-estimates` are safe: they only call the LM Studio estimator and do not load or unload models.
 
-## Playground Downloads
+## Model Packs
 
-To download the curated small-to-medium sampler:
+To download a small daily-use sampler:
 
 ```bash
-make download-playground-mlx
+make download-essential-pack
 ```
 
-Override `PLAYGROUND_MLX_MODELS` to try a different list. The default list uses LM Studio hub model IDs with known MLX variants. The target runs `lms get --mlx --yes` and skips entries LM Studio cannot resolve as MLX artifacts. The default sampler is now also present in the Codex catalog and installed aliases.
+To download the broader playground sampler:
+
+```bash
+make download-playground-pack
+```
+
+To download larger experimental reasoning, coding, and multimodal models:
+
+```bash
+make download-experimental-pack
+```
 
 To download the curated embedding sampler:
 
 ```bash
-make download-embedding-models
+make download-embedding-pack
 ```
 
-Override `EMBEDDING_MODELS` to download or estimate a different embedding list. The default list uses model keys for already indexed LM Studio embeddings and direct Hugging Face GGUF sources where LM Studio's staff-pick search does not resolve the serving model key.
+The older `make download-playground-mlx` and `make download-embedding-models` targets remain for ad hoc overrides through `PLAYGROUND_MLX_MODELS` and `EMBEDDING_MODELS`.
 
 ## Research Summary
 

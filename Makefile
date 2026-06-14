@@ -21,7 +21,7 @@ EMBEDDING_MODELS ?= \
 	text-embedding-granite-embedding-278m-multilingual \
 	text-embedding-bge-small-en-v1.5
 
-.PHONY: install uninstall check validate validate-codex-catalog validate-public estimates embedding-estimates links download-playground-mlx download-embedding-models
+.PHONY: install uninstall check validate validate-codex-catalog validate-public estimates embedding-estimates links download-playground-mlx download-embedding-models download-essential-pack download-playground-pack download-experimental-pack download-embedding-pack
 
 install: validate
 	@$(PY) install --bin-dir "$(BIN_DIR)"
@@ -57,3 +57,15 @@ download-playground-mlx:
 
 download-embedding-models:
 	@EMBEDDING_MODELS="$(EMBEDDING_MODELS)" $(PY) download-embedding-models
+
+download-essential-pack:
+	@$(PY) download-pack essential
+
+download-playground-pack:
+	@$(PY) download-pack playground
+
+download-experimental-pack:
+	@$(PY) download-pack experimental
+
+download-embedding-pack:
+	@$(PY) download-pack embeddings

@@ -43,6 +43,12 @@ class EmbeddingModelSpec:
     download_source: str
 
 
+@dataclass(frozen=True)
+class ModelDownloadSpec:
+    source: str
+    kind: str = "mlx"
+
+
 SUPPORTED_MODELS: tuple[ModelSpec, ...] = (
     ModelSpec(DEFAULT_MODEL),
     ModelSpec(LIGHT_MODEL),
@@ -60,31 +66,6 @@ SUPPORTED_MODELS: tuple[ModelSpec, ...] = (
     ModelSpec(GLM_46V_FLASH_MODEL),
     ModelSpec(QWEN3_30B_A3B_THINKING_MODEL),
 )
-
-MODEL_ALIASES: tuple[tuple[str, str], ...] = (
-    ("codex-lm-studio", DEFAULT_MODEL),
-    ("codex-lm-studio-qwen3.5-9b-mlx-8bit", DEFAULT_MODEL),
-    ("codex-lm-studio-qwen3.5-9b-mlx-4bit", LIGHT_MODEL),
-    ("codex-lm-studio-qwen3.6-27b-mlx-4bit", EXPERIMENTAL_27B_MODEL),
-    ("codex-lm-studio-qwen3.6-35b-a3b", EXPERIMENTAL_35B_MODEL),
-    ("codex-lm-studio-gemma-4-e4b", GEMMA_4_E4B_MODEL),
-    ("codex-lm-studio-phi-4-mini-reasoning", PHI_4_MINI_REASONING_MODEL),
-    ("codex-lm-studio-qwen3-4b-thinking-2507", QWEN3_4B_THINKING_MODEL),
-    ("codex-lm-studio-qwen3-4b-2507", QWEN3_4B_MODEL),
-    ("codex-lm-studio-olmo-3-7b", OLMO_3_7B_MODEL),
-    ("codex-lm-studio-phi-4-reasoning", PHI_4_REASONING_MODEL),
-    ("codex-lm-studio-magistral-small-2509", MAGISTRAL_SMALL_MODEL),
-    ("codex-lm-studio-deepseek-r1-0528-qwen3-8b", DEEPSEEK_R1_QWEN3_8B_MODEL),
-    ("codex-lm-studio-qwen3-vl-8b", QWEN3_VL_8B_MODEL),
-    ("codex-lm-studio-glm-4.6v-flash", GLM_46V_FLASH_MODEL),
-    (
-        "codex-lm-studio-qwen3-30b-a3b-thinking-2507",
-        QWEN3_30B_A3B_THINKING_MODEL,
-    ),
-)
-
-ALIASES: tuple[str, ...] = tuple(alias for alias, _ in MODEL_ALIASES)
-ALIAS_TO_MODEL: dict[str, str] = dict(MODEL_ALIASES)
 
 LEGACY_ALIASES: tuple[str, ...] = (
     "modelcodex",
@@ -144,6 +125,36 @@ EMBEDDING_MODELS: tuple[EmbeddingModelSpec, ...] = (
     ),
 )
 
+MODEL_PACKS: dict[str, tuple[ModelDownloadSpec, ...]] = {
+    "essential": (
+        ModelDownloadSpec(DEFAULT_MODEL),
+        ModelDownloadSpec(LIGHT_MODEL),
+        ModelDownloadSpec(QWEN3_4B_MODEL),
+        ModelDownloadSpec(QWEN3_VL_8B_MODEL),
+        ModelDownloadSpec(DEEPSEEK_R1_QWEN3_8B_MODEL),
+    ),
+    "playground": tuple(ModelDownloadSpec(model) for model in PLAYGROUND_MLX_MODELS),
+    "experimental": (
+        ModelDownloadSpec(EXPERIMENTAL_27B_MODEL),
+        ModelDownloadSpec(EXPERIMENTAL_35B_MODEL),
+        ModelDownloadSpec(PHI_4_REASONING_MODEL),
+        ModelDownloadSpec(MAGISTRAL_SMALL_MODEL),
+        ModelDownloadSpec(QWEN3_30B_A3B_THINKING_MODEL),
+        ModelDownloadSpec("qwen/qwen3-30b-a3b-2507"),
+        ModelDownloadSpec("qwen/qwen3-coder-30b"),
+        ModelDownloadSpec("qwen/qwen3-vl-30b"),
+        ModelDownloadSpec("google/gemma-4-26b-a4b"),
+        ModelDownloadSpec("zai-org/glm-4.7-flash"),
+    ),
+    "embeddings": tuple(
+        ModelDownloadSpec(
+            spec.download_source,
+            "gguf" if spec.download_source.startswith("https://huggingface.co/") else "auto",
+        )
+        for spec in EMBEDDING_MODELS
+    ),
+}
+
 
 def allowed_model_ids() -> tuple[str, ...]:
     return tuple(spec.model_id for spec in SUPPORTED_MODELS)
@@ -161,19 +172,4 @@ def model_spec(model: str) -> ModelSpec:
     for spec in SUPPORTED_MODELS:
         if spec.model_id == model:
             return spec
-    raise ValueError(f"unsupported model: {model}")
-
-
-def default_model_for_invocation(invocation_name: str) -> str:
-    name = invocation_name.lower()
-    if model := ALIAS_TO_MODEL.get(name):
-        return model
-    if "35b" in name and ("a3b" in name or "35b-a3b" in name):
-        return EXPERIMENTAL_35B_MODEL
-    if "27b" in name:
-        return EXPERIMENTAL_27B_MODEL
-    if "4bit" in name:
-        return LIGHT_MODEL
-    if "8bit" in name:
-        return DEFAULT_MODEL
-    return DEFAULT_MODEL
+    return ModelSpec(model)

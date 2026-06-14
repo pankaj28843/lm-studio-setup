@@ -9,15 +9,20 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from lmstudio_setup.catalog_builder import write_catalog
 from lmstudio_setup.constants import (
+    DEFAULT_MODEL,
     DEFAULT_PARALLEL,
     MIN_CONTEXT_LENGTH,
-    allowed_models_label,
-    default_model_for_invocation,
-    model_is_allowed,
     model_spec,
 )
 from lmstudio_setup.lmstudio import ensure_model, options_from_env
+from lmstudio_setup.local_models import (
+    alias_map,
+    default_lms_bin,
+    list_local_models,
+    llm_model_keys,
+)
 from lmstudio_setup.paths import repo_root, with_default_path
 from lmstudio_setup.toml_edit import ensure_root_key
 
@@ -52,7 +57,7 @@ def split_launcher_args(args: list[str]) -> tuple[list[str], bool]:
     return codex_args, override_guardrails
 
 
-def validate_model_args(args: list[str]) -> None:
+def validate_model_args(args: list[str], allowed_models: set[str]) -> None:
     for index, arg in enumerate(args):
         if arg in {"-m", "--model"}:
             if index + 1 >= len(args):
@@ -62,9 +67,10 @@ def validate_model_args(args: list[str]) -> None:
             model = arg.split("=", 1)[1]
         else:
             continue
-        if not model_is_allowed(model):
+        if model not in allowed_models:
             raise ValueError(
-                f"codex-lm-studio only allows models: {allowed_models_label()}; got: {model}"
+                f"codex-lm-studio only allows downloaded LM Studio LLM models: "
+                f"{', '.join(sorted(allowed_models))}; got: {model}"
             )
 
 
@@ -117,28 +123,36 @@ def prepare_codex_home(primary_home: Path, lm_home: Path) -> None:
 async def launch_codex(user_args: list[str]) -> int:
     env = with_default_path()
     root = repo_root()
-    catalog = root / "config" / "lmstudio-qwen.json"
+    static_catalog = root / "config" / "lmstudio-qwen.json"
     invocation_name = env.get(
         "CODEX_LM_STUDIO_INVOCATION_NAME",
         Path(sys.argv[0] if sys.argv else "codex-lm-studio").name,
     )
 
-    if not catalog.is_file() or catalog.stat().st_size == 0:
-        print(f"Model catalog is missing: {catalog}", file=sys.stderr)
+    if not static_catalog.is_file() or static_catalog.stat().st_size == 0:
+        print(f"Model catalog is missing: {static_catalog}", file=sys.stderr)
         return 1
 
     codex_user_args, override_guardrails = split_launcher_args(user_args)
     try:
-        validate_model_args(codex_user_args)
+        local_models = await list_local_models(default_lms_bin())
+        downloaded_llms = set(llm_model_keys(local_models))
+        configured_default_model = env.get("CODEX_LM_STUDIO_DEFAULT_MODEL", DEFAULT_MODEL)
+        dynamic_alias_map = alias_map(local_models, configured_default_model)
+        validate_model_args(codex_user_args, downloaded_llms)
         requested_model = model_arg_value(codex_user_args)
+        alias_model = dynamic_alias_map.get(invocation_name)
+        default_model = alias_model or env.get("CODEX_LM_STUDIO_DEFAULT_MODEL") or DEFAULT_MODEL
         lm_model = requested_model or env.get(
             "CODEX_LM_STUDIO_MODEL",
-            default_model_for_invocation(invocation_name),
+            default_model,
         )
-        if not model_is_allowed(lm_model):
+        if not lm_model:
+            raise ValueError("No downloaded LM Studio LLM models were found")
+        if lm_model not in downloaded_llms:
             raise ValueError(
-                f"codex-lm-studio only allows CODEX_LM_STUDIO_MODEL in: "
-                f"{allowed_models_label()}; got: {lm_model}"
+                f"codex-lm-studio only allows CODEX_LM_STUDIO_MODEL to be a downloaded "
+                f"LM Studio LLM model; got: {lm_model}"
             )
         spec = model_spec(lm_model)
         parallel = positive_int(
@@ -160,7 +174,7 @@ async def launch_codex(user_args: list[str]) -> int:
             env.get("CODEX_LM_STUDIO_RESERVE_MEMORY_GIB", str(spec.reserve_memory_gib)),
             "CODEX_LM_STUDIO_RESERVE_MEMORY_GIB",
         )
-    except ValueError as exc:
+    except (RuntimeError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 2
 
@@ -175,6 +189,8 @@ async def launch_codex(user_args: list[str]) -> int:
     )
 
     prepare_codex_home(primary_home, lm_home)
+    catalog = lm_home / "lmstudio-model-catalog.json"
+    write_catalog(catalog, static_catalog, local_models)
 
     try:
         options = options_from_env(
