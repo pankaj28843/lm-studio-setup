@@ -19,8 +19,21 @@ This setup supports these local MLX model IDs:
 - `allenai/olmo-3-7b`: playground OLMo model.
 - `microsoft/phi-4-reasoning`: playground larger reasoning model.
 - `mistralai/magistral-small-2509`: playground larger reasoning model.
+- `deepseek/deepseek-r1-0528-qwen3-8b`: playground compact reasoning model.
+- `qwen/qwen3-vl-8b`: playground multimodal vision-language model.
+- `zai-org/glm-4.6v-flash`: playground fast multimodal vision-language model.
+- `qwen/qwen3-30b-a3b-thinking-2507`: experimental larger thinking model under the 24 GiB local estimate budget.
 
-The 27B, 35B, Phi 4 Reasoning, and Magistral aliases are for manual trials. LM Studio may predict that some of them will fail its own resource guardrails at 128K context; the helper refuses by default before unloading the working model, unless you explicitly override and type `YES`.
+The 27B, 30B thinking, 35B, Phi 4 Reasoning, and Magistral aliases are for manual trials. LM Studio may predict that some of them will fail its own resource guardrails at 128K context; the helper refuses by default before unloading the working model, unless you explicitly override and type `YES`.
+
+## Embedding Models
+
+Embedding models are managed separately from Codex aliases because they are not chat models:
+
+- `text-embedding-nomic-embed-text-v1.5`: existing Nomic embedding model, about 112 MiB by LM Studio estimate.
+- `text-embedding-granite-embedding-30m-english`: tiny English embedding model, about 46 MiB by LM Studio estimate.
+- `text-embedding-granite-embedding-278m-multilingual`: multilingual Granite embedding model, about 405 MiB by LM Studio estimate.
+- `text-embedding-bge-small-en-v1.5`: small English BGE embedding model, about 49 MiB by LM Studio estimate.
 
 ## What This Installs
 
@@ -38,6 +51,10 @@ The 27B, 35B, Phi 4 Reasoning, and Magistral aliases are for manual trials. LM S
 - `codex-lm-studio-olmo-3-7b`
 - `codex-lm-studio-phi-4-reasoning`
 - `codex-lm-studio-magistral-small-2509`
+- `codex-lm-studio-deepseek-r1-0528-qwen3-8b`
+- `codex-lm-studio-qwen3-vl-8b`
+- `codex-lm-studio-glm-4.6v-flash`
+- `codex-lm-studio-qwen3-30b-a3b-thinking-2507`
 
 The launcher keeps Codex state isolated in `~/.codex-lm-studio` while symlinking non-auth state from `~/.codex`. It also points Codex at the repo-local model catalog in `config/lmstudio-qwen.json`.
 
@@ -100,6 +117,10 @@ codex-lm-studio-qwen3-4b-2507
 codex-lm-studio-olmo-3-7b
 codex-lm-studio-phi-4-reasoning
 codex-lm-studio-magistral-small-2509
+codex-lm-studio-deepseek-r1-0528-qwen3-8b
+codex-lm-studio-qwen3-vl-8b
+codex-lm-studio-glm-4.6v-flash
+codex-lm-studio-qwen3-30b-a3b-thinking-2507
 ```
 
 Override a guardrail refusal when you intentionally want LM Studio to try anyway:
@@ -138,10 +159,11 @@ There is no Codex-side session lock. LM Studio owns request concurrency: the hel
 make validate
 make check
 make estimates
+make embedding-estimates
 make links
 ```
 
-`make validate` is the main gate. It runs Python syntax checks, validates the Codex model catalog with Pydantic, runs Ruff lint/format checks, verifies the catalog parses in Codex, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates. `make estimates` is safe: it only calls the LM Studio estimator and does not load or unload models.
+`make validate` is the main gate. It runs Python syntax checks, validates the Codex model catalog with Pydantic, runs Ruff lint/format checks, verifies the catalog parses in Codex, scans tracked files for obvious public-repo leaks, and runs LM Studio estimates for both chat and embedding models. `make estimates` and `make embedding-estimates` are safe: they only call the LM Studio estimator and do not load or unload models.
 
 ## Playground Downloads
 
@@ -153,6 +175,14 @@ make download-playground-mlx
 
 Override `PLAYGROUND_MLX_MODELS` to try a different list. The default list uses LM Studio hub model IDs with known MLX variants. The target runs `lms get --mlx --yes` and skips entries LM Studio cannot resolve as MLX artifacts. The default sampler is now also present in the Codex catalog and installed aliases.
 
+To download the curated embedding sampler:
+
+```bash
+make download-embedding-models
+```
+
+Override `EMBEDDING_MODELS` to download or estimate a different embedding list. The default list uses model keys for already indexed LM Studio embeddings and direct Hugging Face GGUF sources where LM Studio's staff-pick search does not resolve the serving model key.
+
 ## Research Summary
 
-The model choice is documented in `docs/model-choice.md`. The short version: official LM Studio docs recommend `lms load --estimate-only` for memory planning, LM Studio supports parallel requests with continuous batching, MLX support for that batching arrived in LM Studio 0.4.2, and the Qwen MLX models provide native 262K context windows with tool-use support. Local estimates keep 9B 8-bit, 4-bit, and the small playground models comfortably below the 24 GiB budget, while 27B, 35B, and larger reasoning models are experiments on this 36 GB machine.
+The model choice is documented in `docs/model-choice.md`. The short version: official LM Studio docs recommend `lms load --estimate-only` for memory planning, LM Studio supports parallel requests with continuous batching, MLX support for that batching arrived in LM Studio 0.4.2, and the Qwen MLX models provide native 262K context windows with tool-use support. Local estimates keep 9B 8-bit, 4-bit, small reasoning, multimodal, and embedding models comfortably below the 24 GiB budget. The 27B, 30B thinking, 35B, and larger reasoning models remain experiments on this 36 GB machine.

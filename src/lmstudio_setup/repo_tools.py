@@ -17,12 +17,13 @@ from pydantic import ValidationError
 from lmstudio_setup.catalog import validate_catalog
 from lmstudio_setup.constants import (
     ALIASES,
+    EMBEDDING_MODELS,
     EXPERIMENTAL_35B_MODEL,
     LEGACY_ALIASES,
     PLAYGROUND_MLX_MODELS,
     SUPPORTED_MODELS,
 )
-from lmstudio_setup.lmstudio import ensure_model, options_from_env
+from lmstudio_setup.lmstudio import ensure_model, options_from_env, parse_memory_estimate
 from lmstudio_setup.paths import repo_root, with_default_path
 from lmstudio_setup.process import run_command
 
@@ -220,6 +221,23 @@ def models_from_env_or_args(models: Iterable[str]) -> list[str]:
     return list(PLAYGROUND_MLX_MODELS)
 
 
+def embedding_models_from_env_or_args(models: Iterable[str]) -> list[str]:
+    explicit = [model for model in models if model]
+    if explicit:
+        return explicit
+    env_value = os.environ.get("EMBEDDING_MODELS", "")
+    if env_value.strip():
+        return env_value.split()
+    return [spec.model_id for spec in EMBEDDING_MODELS]
+
+
+def embedding_download_source(model: str) -> str:
+    for spec in EMBEDDING_MODELS:
+        if spec.model_id == model or spec.download_source == model:
+            return spec.download_source
+    return model
+
+
 async def download_playground_mlx(models: list[str]) -> int:
     lms = Path(os.environ.get("LMS_BIN", str(Path.home() / ".lmstudio" / "bin" / "lms")))
     for model in models:
@@ -234,6 +252,47 @@ async def download_playground_mlx(models: list[str]) -> int:
                 f"Skipped {model}; LM Studio could not resolve an MLX artifact for it.",
                 file=sys.stderr,
             )
+    return 0
+
+
+async def download_embedding_models(models: list[str]) -> int:
+    lms = Path(os.environ.get("LMS_BIN", str(Path.home() / ".lmstudio" / "bin" / "lms")))
+    failed = False
+    for model in models:
+        source = embedding_download_source(model)
+        print(f"Downloading embedding model: {source}")
+        command = [str(lms), "get", "--yes", source]
+        if source.startswith("https://huggingface.co/"):
+            command = [str(lms), "get", "--gguf", "--yes", source]
+        result = await run_command(command, env=with_default_path(), capture=False)
+        if result.returncode != 0:
+            print(f"Failed to download embedding model: {source}", file=sys.stderr)
+            failed = True
+    return 1 if failed else 0
+
+
+async def embedding_estimates(models: list[str]) -> int:
+    lms = Path(os.environ.get("LMS_BIN", str(Path.home() / ".lmstudio" / "bin" / "lms")))
+    for model in models:
+        result = await run_command(
+            [str(lms), "load", model, "--estimate-only", "--yes"],
+            env=with_default_path(),
+        )
+        if result.returncode != 0:
+            print(result.combined_output, file=sys.stderr)
+            return result.returncode
+        try:
+            estimate = parse_memory_estimate(result.combined_output)
+        except ValueError as exc:
+            print(result.combined_output, file=sys.stderr)
+            print(f"{exc} for {model}", file=sys.stderr)
+            return 1
+        print(
+            f"{model}: total estimate {estimate.total_gib:.2f} GiB, "
+            f"GPU estimate {estimate.gpu_gib:.2f} GiB"
+            if estimate.gpu_gib is not None
+            else f"{model}: total estimate {estimate.total_gib:.2f} GiB, GPU estimate unknown"
+        )
     return 0
 
 
@@ -261,8 +320,14 @@ def build_parser() -> argparse.ArgumentParser:
     estimates_parser = subparsers.add_parser("estimates")
     estimates_parser.add_argument("--parallel", type=int, default=4)
 
+    embedding_estimates_parser = subparsers.add_parser("embedding-estimates")
+    embedding_estimates_parser.add_argument("--model", action="append", default=[])
+
     download_parser = subparsers.add_parser("download-playground-mlx")
     download_parser.add_argument("--model", action="append", default=[])
+
+    download_embeddings_parser = subparsers.add_parser("download-embedding-models")
+    download_embeddings_parser.add_argument("--model", action="append", default=[])
     return parser
 
 
@@ -286,9 +351,19 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(asyncio.run(public_scan()))
         case "estimates":
             raise SystemExit(asyncio.run(estimates(args.parallel)))
+        case "embedding-estimates":
+            raise SystemExit(
+                asyncio.run(embedding_estimates(embedding_models_from_env_or_args(args.model)))
+            )
         case "download-playground-mlx":
             raise SystemExit(
                 asyncio.run(download_playground_mlx(models_from_env_or_args(args.model)))
+            )
+        case "download-embedding-models":
+            raise SystemExit(
+                asyncio.run(
+                    download_embedding_models(embedding_models_from_env_or_args(args.model))
+                )
             )
         case _:
             parser.error(f"unknown command: {args.command}")

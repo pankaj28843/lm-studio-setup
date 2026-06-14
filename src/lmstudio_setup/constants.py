@@ -13,6 +13,14 @@ QWEN3_4B_MODEL = "qwen/qwen3-4b-2507"
 OLMO_3_7B_MODEL = "allenai/olmo-3-7b"
 PHI_4_REASONING_MODEL = "microsoft/phi-4-reasoning"
 MAGISTRAL_SMALL_MODEL = "mistralai/magistral-small-2509"
+DEEPSEEK_R1_QWEN3_8B_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b"
+QWEN3_VL_8B_MODEL = "qwen/qwen3-vl-8b"
+GLM_46V_FLASH_MODEL = "zai-org/glm-4.6v-flash"
+QWEN3_30B_A3B_THINKING_MODEL = "qwen/qwen3-30b-a3b-thinking-2507"
+NOMIC_EMBED_TEXT_MODEL = "text-embedding-nomic-embed-text-v1.5"
+GRANITE_EMBEDDING_30M_ENGLISH_MODEL = "text-embedding-granite-embedding-30m-english"
+GRANITE_EMBEDDING_278M_MULTILINGUAL_MODEL = "text-embedding-granite-embedding-278m-multilingual"
+BGE_SMALL_EN_MODEL = "text-embedding-bge-small-en-v1.5"
 
 MIN_CONTEXT_LENGTH = 131_072
 DEFAULT_MAX_MEMORY_GIB = 24.0
@@ -29,6 +37,12 @@ class ModelSpec:
     reserve_memory_gib: float = DEFAULT_RESERVE_MEMORY_GIB
 
 
+@dataclass(frozen=True)
+class EmbeddingModelSpec:
+    model_id: str
+    download_source: str
+
+
 SUPPORTED_MODELS: tuple[ModelSpec, ...] = (
     ModelSpec(DEFAULT_MODEL),
     ModelSpec(LIGHT_MODEL),
@@ -41,6 +55,10 @@ SUPPORTED_MODELS: tuple[ModelSpec, ...] = (
     ModelSpec(OLMO_3_7B_MODEL),
     ModelSpec(PHI_4_REASONING_MODEL),
     ModelSpec(MAGISTRAL_SMALL_MODEL),
+    ModelSpec(DEEPSEEK_R1_QWEN3_8B_MODEL),
+    ModelSpec(QWEN3_VL_8B_MODEL),
+    ModelSpec(GLM_46V_FLASH_MODEL),
+    ModelSpec(QWEN3_30B_A3B_THINKING_MODEL),
 )
 
 MODEL_ALIASES: tuple[tuple[str, str], ...] = (
@@ -56,6 +74,13 @@ MODEL_ALIASES: tuple[tuple[str, str], ...] = (
     ("codex-lm-studio-olmo-3-7b", OLMO_3_7B_MODEL),
     ("codex-lm-studio-phi-4-reasoning", PHI_4_REASONING_MODEL),
     ("codex-lm-studio-magistral-small-2509", MAGISTRAL_SMALL_MODEL),
+    ("codex-lm-studio-deepseek-r1-0528-qwen3-8b", DEEPSEEK_R1_QWEN3_8B_MODEL),
+    ("codex-lm-studio-qwen3-vl-8b", QWEN3_VL_8B_MODEL),
+    ("codex-lm-studio-glm-4.6v-flash", GLM_46V_FLASH_MODEL),
+    (
+        "codex-lm-studio-qwen3-30b-a3b-thinking-2507",
+        QWEN3_30B_A3B_THINKING_MODEL,
+    ),
 )
 
 ALIASES: tuple[str, ...] = tuple(alias for alias, _ in MODEL_ALIASES)
@@ -97,6 +122,26 @@ PLAYGROUND_MLX_MODELS: tuple[str, ...] = (
     OLMO_3_7B_MODEL,
     PHI_4_REASONING_MODEL,
     MAGISTRAL_SMALL_MODEL,
+    DEEPSEEK_R1_QWEN3_8B_MODEL,
+    QWEN3_VL_8B_MODEL,
+    GLM_46V_FLASH_MODEL,
+    QWEN3_30B_A3B_THINKING_MODEL,
+)
+
+EMBEDDING_MODELS: tuple[EmbeddingModelSpec, ...] = (
+    EmbeddingModelSpec(NOMIC_EMBED_TEXT_MODEL, NOMIC_EMBED_TEXT_MODEL),
+    EmbeddingModelSpec(
+        GRANITE_EMBEDDING_30M_ENGLISH_MODEL,
+        "https://huggingface.co/lmstudio-community/granite-embedding-30m-english-GGUF",
+    ),
+    EmbeddingModelSpec(
+        GRANITE_EMBEDDING_278M_MULTILINGUAL_MODEL,
+        "https://huggingface.co/lmstudio-community/granite-embedding-278m-multilingual-GGUF",
+    ),
+    EmbeddingModelSpec(
+        BGE_SMALL_EN_MODEL,
+        "https://huggingface.co/ChristianAzinn/bge-small-en-v1.5-gguf",
+    ),
 )
 
 
