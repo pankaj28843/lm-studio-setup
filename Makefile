@@ -6,9 +6,13 @@ BIN_DIR ?= $(HOME)/.local/bin
 MAIN := $(REPO_ROOT)/bin/codex-lm-studio
 ENSURE := $(REPO_ROOT)/bin/ensure-lmstudio-codex-model
 CATALOG := $(REPO_ROOT)/config/lmstudio-qwen.json
+ESTIMATE_PARALLEL ?= 4
 
 ALIASES := \
 	codex-lm-studio \
+	codex-lm-studio-qwen3.5-9b-mlx-4bit
+
+LEGACY_ALIASES := \
 	modelcodex \
 	codex-lm-studio-8bit \
 	modelcodex-8bit \
@@ -20,7 +24,6 @@ ALIASES := \
 	modelcodex-qwen3.5-9b-mlx-8bit \
 	codex-lm-studio-qwen35-9b-4bit \
 	modelcodex-qwen35-9b-4bit \
-	codex-lm-studio-qwen3.5-9b-mlx-4bit \
 	modelcodex-qwen3.5-9b-mlx-4bit \
 	codex-lm-studio-parallel \
 	modelcodex-parallel \
@@ -42,6 +45,15 @@ ALIASES := \
 install: check
 	@install -d "$(BIN_DIR)"
 	@chmod +x "$(MAIN)" "$(ENSURE)"
+	@for name in $(LEGACY_ALIASES); do \
+		target="$(BIN_DIR)/$$name"; \
+		if [ -L "$$target" ]; then \
+			link="$$(readlink "$$target")"; \
+			case "$$link" in \
+				"$(MAIN)"|*"/lm-studio-setup/bin/codex-lm-studio") rm -f "$$target" ;; \
+			esac; \
+		fi; \
+	done
 	@for name in $(ALIASES); do \
 		target="$(BIN_DIR)/$$name"; \
 		if [ -e "$$target" ] && [ ! -L "$$target" ]; then \
@@ -57,7 +69,7 @@ install: check
 	@echo "Installed LM Studio Codex launchers into $(BIN_DIR)"
 
 uninstall:
-	@for name in $(ALIASES) ensure-lmstudio-codex-model; do \
+	@for name in $(ALIASES) $(LEGACY_ALIASES) ensure-lmstudio-codex-model; do \
 		target="$(BIN_DIR)/$$name"; \
 		if [ -L "$$target" ]; then \
 			resolved="$$(cd "$$(dirname "$$target")" && pwd -P)/$$(readlink "$$target")"; \
@@ -75,8 +87,8 @@ check:
 	@echo "Shell and catalog checks passed"
 
 estimates:
-	@CODEX_LM_STUDIO_MODEL='qwen3.5-9b-mlx@8bit' bash "$(ENSURE)" --estimate-only
-	@CODEX_LM_STUDIO_MODEL='qwen3.5-9b-mlx@4bit' bash "$(ENSURE)" --estimate-only
+	@CODEX_LM_STUDIO_MODEL='qwen3.5-9b-mlx@8bit' CODEX_LM_STUDIO_PARALLEL='$(ESTIMATE_PARALLEL)' bash "$(ENSURE)" --estimate-only
+	@CODEX_LM_STUDIO_MODEL='qwen3.5-9b-mlx@4bit' CODEX_LM_STUDIO_PARALLEL='$(ESTIMATE_PARALLEL)' bash "$(ENSURE)" --estimate-only
 
 links:
 	@for name in $(ALIASES) ensure-lmstudio-codex-model; do \

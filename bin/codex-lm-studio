@@ -34,17 +34,11 @@ readonly LIGHT_MODEL="qwen3.5-9b-mlx@4bit"
 readonly MIN_CONTEXT_LENGTH=131072
 readonly DEFAULT_MAX_MEMORY_GIB=24
 readonly DEFAULT_RESERVE_MEMORY_GIB=12
-readonly DEFAULT_PARALLEL=1
-readonly DEFAULT_MULTI_SESSION_PARALLEL=2
+readonly DEFAULT_PARALLEL=4
 readonly CATALOG_PATH="$REPO_ROOT/config/lmstudio-qwen.json"
 
 allowed_models() {
   printf '%s\n' "$DEFAULT_MODEL" "$LIGHT_MODEL"
-}
-
-allowed_models_label() {
-  local IFS=", "
-  printf '%s\n' "$*"
 }
 
 model_is_allowed() {
@@ -55,6 +49,11 @@ model_is_allowed() {
     [[ "$model" == "$allowed" ]] && return 0
   done
   return 1
+}
+
+allowed_models_label() {
+  local IFS=", "
+  printf '%s\n' "$*"
 }
 
 default_model_for_invocation() {
@@ -71,35 +70,13 @@ default_model_for_invocation() {
   esac
 }
 
-lock_enabled_for_invocation() {
-  if [[ "${CODEX_LM_STUDIO_ALLOW_PARALLEL_SESSIONS:-0}" == "1" ]]; then
-    return 1
-  fi
-
-  case "$1" in
-    *parallel*|*multi*|*concurrent*)
-      return 1
-      ;;
-    *)
-      return 0
-      ;;
-  esac
-}
-
 parallel_for_invocation() {
   if [[ -n "${CODEX_LM_STUDIO_PARALLEL:-}" ]]; then
     printf '%s\n' "$CODEX_LM_STUDIO_PARALLEL"
     return 0
   fi
 
-  case "$1" in
-    *parallel*|*multi*|*concurrent*)
-      printf '%s\n' "$DEFAULT_MULTI_SESSION_PARALLEL"
-      ;;
-    *)
-      printf '%s\n' "$DEFAULT_PARALLEL"
-      ;;
-  esac
+  printf '%s\n' "$DEFAULT_PARALLEL"
 }
 
 toml_string() {
@@ -243,78 +220,6 @@ ensure_root_key() {
   chmod 600 "$config_file"
 }
 
-lock_info_path() {
-  local lm_home="${CODEX_LM_STUDIO_HOME:-$HOME/.codex-lm-studio}"
-  local lock_dir="${CODEX_LM_STUDIO_LOCK_DIR:-$lm_home/locks}"
-  printf '%s/modelcodex.lock.info\n' "$lock_dir"
-}
-
-print_existing_session() {
-  local info="$1"
-  echo "Another modelcodex/codex-lm-studio session is already running; exiting." >&2
-  if [[ -s "$info" ]]; then
-    echo "Lock holder:" >&2
-    sed -n '1,8p' "$info" >&2 || true
-  fi
-}
-
-run_with_session_lock() {
-  if [[ "${CODEX_LM_STUDIO_LOCKED:-0}" == "1" ]]; then
-    return 0
-  fi
-
-  if ! lock_enabled_for_invocation "$INVOCATION_NAME"; then
-    export CODEX_LM_STUDIO_LOCKED=1
-    export CODEX_LM_STUDIO_LOCK_INFO=""
-    return 0
-  fi
-
-  local lm_home="${CODEX_LM_STUDIO_HOME:-$HOME/.codex-lm-studio}"
-  local lock_dir="${CODEX_LM_STUDIO_LOCK_DIR:-$lm_home/locks}"
-  local lock_file="${CODEX_LM_STUDIO_LOCK_FILE:-$lock_dir/modelcodex.lock}"
-  local info="$lock_file.info"
-
-  mkdir -p "$lm_home" "$lock_dir"
-  chmod 700 "$lm_home" "$lock_dir" 2>/dev/null || true
-
-  exec 9>"$lock_file"
-  if command -v flock >/dev/null 2>&1; then
-    if ! flock -n 9; then
-      print_existing_session "$info"
-      exit 75
-    fi
-  elif command -v lockf >/dev/null 2>&1; then
-    if ! lockf -s -t 0 9; then
-      print_existing_session "$info"
-      exit 75
-    fi
-  else
-    local atomic_dir="$lock_file.dir"
-    if ! mkdir "$atomic_dir" 2>/dev/null; then
-      print_existing_session "$info"
-      exit 75
-    fi
-    trap 'rm -rf "$atomic_dir"' EXIT
-  fi
-
-  export CODEX_LM_STUDIO_LOCKED=1
-  export CODEX_LM_STUDIO_LOCK_INFO="$info"
-}
-
-write_lock_info() {
-  local info="${CODEX_LM_STUDIO_LOCK_INFO:-}"
-  [[ -n "$info" ]] || return 0
-
-  {
-    printf 'pid=%s\n' "$$"
-    printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'command=%s\n' "$INVOCATION_NAME"
-    printf 'model=%s\n' "$1"
-    printf 'cwd=%s\n' "$(pwd)"
-  } >"$info"
-  trap 'rm -f "$info"' EXIT
-}
-
 prepare_codex_home() {
   local primary_home="$1"
   local lm_home="$2"
@@ -353,8 +258,6 @@ prepare_codex_home() {
 
 main() {
   CODEX_LM_STUDIO_ORIGINAL_ARGS=("$@")
-  run_with_session_lock "$@"
-
   local -a allowed=("$DEFAULT_MODEL" "$LIGHT_MODEL")
 
   if ! command -v jq >/dev/null 2>&1; then
@@ -399,7 +302,6 @@ main() {
   lm_context_length="$(context_at_least_min "${CODEX_LM_STUDIO_CONTEXT_LENGTH:-$MIN_CONTEXT_LENGTH}" "$MIN_CONTEXT_LENGTH" "CODEX_LM_STUDIO_CONTEXT_LENGTH")"
   lm_compact_limit="${CODEX_LM_STUDIO_AUTO_COMPACT_TOKEN_LIMIT:-$(((lm_context_length * 80 + 99) / 100))}"
 
-  write_lock_info "$lm_model"
   prepare_codex_home "$primary_home" "$lm_home"
 
   local ensure_bin="${CODEX_LM_STUDIO_ENSURE_BIN:-$REPO_ROOT/bin/ensure-lmstudio-codex-model}"
